@@ -98,7 +98,7 @@ func expectedLines(t *testing.T, path, ruleID string) []int {
 	if err != nil {
 		t.Fatalf("opening fixture: %v", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var lines []int
 	scan := bufio.NewScanner(f)

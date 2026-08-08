@@ -1,37 +1,56 @@
 # Plumbline
 
-A linter for [Soroban](https://developers.stellar.org/docs/build/smart-contracts) smart
-contracts, shipped as a GitHub Action.
+A linter for [Soroban](https://developers.stellar.org/docs/build/smart-contracts)
+smart contracts, shipped as a GitHub Action.
 
-Plumbline reads Soroban contract source (Rust) and reports issues that are easy to miss
-in review — a state-mutating function with no authorization check, a `panic!` where a
-contract `Error` belongs, arithmetic that can silently overflow.
+Plumbline reads Soroban contract source and reports issues that are easy to miss
+in review — a state-mutating function with no authorization check, a `panic!`
+where a contract `Error` belongs, arithmetic that can silently overflow. Findings
+land as inline annotations on the pull request that introduced them.
 
-## Status
+Rules are **AST checks**, not regex. Contract source is parsed with the
+tree-sitter Rust grammar, so a rule can ask structural questions — "does any path
+through this function reach a `require_auth` call?" — instead of matching text.
 
-Early. The engine, the rule interface, and the first rules are being built now. Nothing
-here is stable yet.
+> **Status: early.** The engine and the first three rules work and are tested.
+> Nothing is stable yet, and `.plumbline.toml` configuration is not implemented.
 
-## Design
+## Use it in CI
 
-- **Plumbline is written in Go.** It *reads* Rust; it is not written in Rust. There is no
-  Rust in this repo outside of test fixtures and sample contracts.
-- **Rules are AST checks**, not regex. Contract source is parsed with the tree-sitter
-  Rust grammar so a rule can ask real structural questions ("does this function body
-  reach a `require_auth` call?") instead of pattern-matching text.
-- **One rule per file, no rule depends on another.** Every rule is independently
-  testable and has a pass fixture and a fail fixture proving it fires when it should and
-  stays quiet when it shouldn't.
+```yaml
+- uses: use-plumbline/plumbline@main
+  with:
+    paths: contracts/
+```
 
-## Layout
+Options and exit codes: [docs/github-action.md](docs/github-action.md).
 
-| Path | What lives there |
-| --- | --- |
-| `cmd/plumbline/` | CLI entrypoint |
-| `internal/engine/` | Source loading, parsing, rule execution, finding collection |
-| `internal/rule/` | The `Rule` interface and the rule registry |
-| `rules/` | One file per rule |
-| `testdata/` | Sample contract and per-rule pass/fail fixtures |
+## Use it locally
+
+```sh
+make build
+./bin/plumbline contracts/          # lint a directory
+./bin/plumbline --list-rules        # what it checks
+./bin/plumbline --explain missing-auth
+```
+
+## The rules
+
+| Rule | Severity | Reports |
+| --- | --- | --- |
+| `missing-auth` | error | A contract function writes storage with no `require_auth` on any path through it |
+| `panic-in-contract` | warning | `panic!`, `.unwrap()` or `.expect()` where a contract `Error` belongs |
+| `unchecked-arithmetic` | warning | Arithmetic on a token-sized integer without `checked_*` or `saturating_*` |
+
+Each rule carries its own "why it matters" and "how to fix it" — run
+`plumbline --explain <rule>`.
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — how the engine, rules and parser fit together
+- [Writing a rule](docs/writing-a-rule.md) — the `Rule` interface and the fixture convention
+- [The GitHub Action](docs/github-action.md) — inputs, outputs and exit codes
+- [Contributing](CONTRIBUTING.md)
 
 ## License
 

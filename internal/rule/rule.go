@@ -26,6 +26,8 @@ type Node = syntax.Node
 // exit codes and to annotation levels is decided further out.
 type Severity string
 
+// The severities a rule may declare. They are deliberately unranked here:
+// deciding which of them should fail a build is policy, and lives in the CLI.
 const (
 	SeverityError   Severity = "error"
 	SeverityWarning Severity = "warning"

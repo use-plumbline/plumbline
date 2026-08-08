@@ -1,0 +1,48 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # A linter that reads Rust and reports on it has no business ignoring
+    # errors from its own writes.
+    - errorlint
+    - misspell
+    - revive
+    - unconvert
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          # Every exported symbol in internal/rule is API a contributor
+          # writes rules against, so it stays documented.
+          severity: error
+
+  exclusions:
+    rules:
+      # Table-driven tests read better without a doc comment per helper.
+      - path: _test\.go
+        linters:
+          - revive
+
+      # Every rule implements Meta and Check, and "// Meta implements
+      # rule.Rule" on each of them is boilerplate a contributor has to write
+      # and nobody reads. A rule's user-facing documentation is the Summary,
+      # Why and Fix it returns from Meta — which the registry rejects the rule
+      # for leaving empty, so it is enforced more strictly than a doc comment.
+      - path: ^rules/
+        linters:
+          - revive
+        text: "exported method .*\\.(Meta|Check) should have comment"
+
+formatters:
+  enable:
+    - gofmt
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
