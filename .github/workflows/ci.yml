@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files need gofmt:"
+            echo "$unformatted"
+            gofmt -d $unformatted
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      # The Rust grammar is linked through cgo, so the race detector is
+      # checking the boundary as much as the Go code.
+      - name: go test -race
+        run: go test -race ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+
+  action:
+    name: GitHub Action
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Plumbline lints its own sample contract with its own action. The
+      # sample is idiomatic Soroban, so anything reported here is a false
+      # positive — which is why the threshold is warning rather than error.
+      - name: Lint the sample contract
+        id: sample
+        uses: ./
+        with:
+          paths: testdata/sample-contract
+          fail-on: warning
+
+      - name: The sample contract must be completely clean
+        run: |
+          if [ "${{ steps.sample.outputs.findings }}" != "0" ]; then
+            echo "Plumbline reported ${{ steps.sample.outputs.findings }} finding(s) on idiomatic Soroban code."
+            exit 1
+          fi
+
+      # The other direction: prove the rules actually fire, end to end
+      # through the real binary, not just in the rule unit tests.
+      - name: Findings must fail the run
+        shell: bash
+        run: |
+          go build -o "$RUNNER_TEMP/plumbline" ./cmd/plumbline
+          set +e
+          "$RUNNER_TEMP/plumbline" testdata/rules/missing-auth/fail.rs >"$RUNNER_TEMP/out.txt" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/out.txt"
+          if [ "$status" -ne 1 ]; then
+            echo "expected exit 1 on a contract with defects, got $status"
+            exit 1
+          fi
+          grep -q 'missing-auth' "$RUNNER_TEMP/out.txt"
+
+      - name: Wrapper script must be valid shell
+        run: shellcheck action/run.sh
+
+  contract:
+    name: Sample contract
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: testdata/sample-contract
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: testdata/sample-contract
+
+      # The sample contract is what Plumbline claims good Soroban looks like.
+      # Compiling and testing it is what stops that claim from drifting away
+      # from the real soroban-sdk.
+      - name: cargo test
+        run: cargo test
