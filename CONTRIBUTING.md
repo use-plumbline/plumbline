@@ -37,7 +37,7 @@ Adding one means three things:
    `fail.rs`. These are not optional — the test harness is driven off the
    registry, so a rule without both fixtures fails the build.
 
-See [docs/writing-a-rule.md](docs/writing-a-rule.md) for the details: what
+See [docs/adding-a-rule.md](docs/adding-a-rule.md) for the details: what
 `Context` gives you, how to navigate the syntax tree, and the conventions the
 fixtures follow.
 

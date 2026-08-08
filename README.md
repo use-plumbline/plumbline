@@ -48,7 +48,7 @@ Each rule carries its own "why it matters" and "how to fix it" — run
 ## Documentation
 
 - [Architecture](docs/architecture.md) — how the engine, rules and parser fit together
-- [Writing a rule](docs/writing-a-rule.md) — the `Rule` interface and the fixture convention
+- [Adding a rule](docs/adding-a-rule.md) — the `Rule` interface, the fixture convention, and how to see the AST
 - [The GitHub Action](docs/github-action.md) — inputs, outputs and exit codes
 - [Contributing](CONTRIBUTING.md)
 
