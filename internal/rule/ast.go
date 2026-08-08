@@ -12,6 +12,11 @@ type MethodCall struct {
 	Name string
 	// Recv is the receiver expression the method was called on.
 	Recv *ts.Node
+	// Field is the method name node. Report findings here rather than at
+	// Node: in a chain like env.storage().persistent().set(k, v) the call
+	// expression starts back at `env`, so an annotation anchored to Node
+	// lands several lines above the call it is talking about.
+	Field *ts.Node
 	// Node is the call_expression itself.
 	Node *ts.Node
 }
@@ -30,9 +35,10 @@ func AsMethodCall(n *ts.Node, src []byte) (MethodCall, bool) {
 		return MethodCall{}, false
 	}
 	return MethodCall{
-		Name: field.Utf8Text(src),
-		Recv: fn.ChildByFieldName("value"),
-		Node: n,
+		Name:  field.Utf8Text(src),
+		Recv:  fn.ChildByFieldName("value"),
+		Field: field,
+		Node:  n,
 	}, true
 }
 

@@ -93,7 +93,7 @@ func findStorageMutation(body *ts.Node, src []byte) *ts.Node {
 		}
 		call, ok := rule.AsMethodCall(n, src)
 		if ok && storageMutators[call.Name] && receiverChainHas(call.Recv, src, "storage") {
-			found = call.Node
+			found = call.Field
 			return false
 		}
 		return true
