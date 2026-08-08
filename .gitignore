@@ -13,6 +13,9 @@ plumbline
 # Rust build output from testdata contracts
 target/
 
+# Ledger snapshots soroban-sdk writes during contract tests
+test_snapshots/
+
 # Editor / OS
 .DS_Store
 .idea/
