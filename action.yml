@@ -1,0 +1,56 @@
+name: Plumbline
+description: Lint Soroban smart contracts and annotate the pull request with what it finds.
+author: Plumbline contributors
+
+branding:
+  icon: check-square
+  color: blue
+
+inputs:
+  paths:
+    description: |
+      Files or directories to lint, whitespace or newline separated.
+      Directories are walked for .rs sources.
+    required: false
+    default: "."
+  fail-on:
+    description: |
+      Lowest severity that fails the run: error, warning, note, or never.
+      Findings below the threshold are still annotated.
+    required: false
+    default: error
+  format:
+    description: |
+      Output format. "github" emits the workflow commands that become inline
+      annotations; "text" is easier to read when debugging a workflow.
+    required: false
+    default: github
+
+outputs:
+  findings:
+    description: Number of findings reported.
+    value: ${{ steps.plumbline.outputs.findings }}
+  exit-code:
+    description: The linter's exit code — 0 clean, 1 findings at or above fail-on.
+    value: ${{ steps.plumbline.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v7
+      with:
+        # Tracks the Go version Plumbline itself declares, so the action
+        # cannot drift from the module it builds.
+        go-version-file: ${{ github.action_path }}/go.mod
+        cache-dependency-path: ${{ github.action_path }}/go.sum
+
+    - name: Run Plumbline
+      id: plumbline
+      shell: bash
+      run: ${{ github.action_path }}/action/run.sh
+      env:
+        PLUMBLINE_ACTION_PATH: ${{ github.action_path }}
+        PLUMBLINE_PATHS: ${{ inputs.paths }}
+        PLUMBLINE_FAIL_ON: ${{ inputs.fail-on }}
+        PLUMBLINE_FORMAT: ${{ inputs.format }}
