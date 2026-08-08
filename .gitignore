@@ -1,7 +1,10 @@
-# Build output
+# Build output.
+# The binary entry is anchored to the repo root on purpose: an unanchored
+# "plumbline" also matches the cmd/plumbline/ directory, which silently
+# excludes the CLI from every `git add`.
 /bin/
 /dist/
-plumbline
+/plumbline
 
 # Logs
 *.log
