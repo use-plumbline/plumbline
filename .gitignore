@@ -1,0 +1,19 @@
+# Build output
+/bin/
+/dist/
+plumbline
+
+# Logs
+*.log
+
+# Go test/coverage artifacts
+*.test
+*.out
+
+# Rust build output from testdata contracts
+target/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
