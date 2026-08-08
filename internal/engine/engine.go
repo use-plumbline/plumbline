@@ -6,14 +6,12 @@
 package engine
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"sort"
 
-	ts "github.com/tree-sitter/go-tree-sitter"
-	tsrust "github.com/tree-sitter/tree-sitter-rust/bindings/go"
-
 	"github.com/use-plumbline/plumbline/internal/rule"
+	"github.com/use-plumbline/plumbline/internal/syntax"
 )
 
 // Engine runs a fixed set of rules over Rust sources.
@@ -78,11 +76,11 @@ func (e *Engine) Run(paths []string) (*Result, error) {
 		return nil, err
 	}
 
-	parser := ts.NewParser()
-	defer parser.Close()
-	if err := parser.SetLanguage(ts.NewLanguage(tsrust.Language())); err != nil {
-		return nil, fmt.Errorf("loading the Rust grammar: %w", err)
+	parser, err := syntax.NewParser()
+	if err != nil {
+		return nil, err
 	}
+	defer parser.Close()
 
 	res := &Result{}
 	for _, path := range files {
@@ -117,21 +115,21 @@ func (e *Engine) Run(paths []string) (*Result, error) {
 }
 
 // lintFile parses one source and runs every enabled rule over it.
-func (e *Engine) lintFile(parser *ts.Parser, path string, src []byte) ([]rule.Finding, error) {
-	tree := parser.Parse(src, nil)
-	if tree == nil {
-		return nil, fmt.Errorf("the Rust parser returned no tree")
+func (e *Engine) lintFile(parser *syntax.Parser, path string, src []byte) ([]rule.Finding, error) {
+	tree, err := parser.Parse(src)
+	if err != nil {
+		return nil, err
 	}
 	defer tree.Close()
 
-	root := tree.RootNode()
+	root := tree.Root()
 	// A rule reading a broken parse tree reports nonsense, so a file that
 	// does not parse is skipped rather than guessed at.
 	if root.HasError() {
-		return nil, fmt.Errorf("could not be parsed as Rust")
+		return nil, errors.New("could not be parsed as Rust")
 	}
 
-	ctx := &rule.Context{Path: path, Src: src, Root: root}
+	ctx := &rule.Context{Path: path, Root: root}
 
 	var out []rule.Finding
 	for _, r := range e.registry.Rules() {

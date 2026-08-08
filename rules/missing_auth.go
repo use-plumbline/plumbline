@@ -1,10 +1,6 @@
 package rules
 
-import (
-	ts "github.com/tree-sitter/go-tree-sitter"
-
-	"github.com/use-plumbline/plumbline/internal/rule"
-)
+import "github.com/use-plumbline/plumbline/internal/rule"
 
 // storageMutators are the Storage methods that change ledger state, verified
 // against soroban-sdk 27 (soroban_sdk::storage::{Instance,Persistent,Temporary}).
@@ -28,7 +24,7 @@ var authCalls = map[string]bool{
 }
 
 // maxAuthDepth bounds how far the search follows helper calls looking for an
-// authorization check. Three frames covers the idiomatic
+// authorization check. Four frames covers the idiomatic
 // `entry -> require_admin -> admin.require_auth()` shape with room to spare;
 // anything deeper is worth a human reading it anyway.
 const maxAuthDepth = 4
@@ -58,7 +54,7 @@ func (MissingAuth) Check(c *rule.Context) []rule.Finding {
 	if len(fns) == 0 {
 		return nil
 	}
-	locals := rule.LocalFns(c.Root, c.Src)
+	locals := rule.LocalFns(c.Root)
 
 	var out []rule.Finding
 	for _, fn := range fns {
@@ -69,36 +65,36 @@ func (MissingAuth) Check(c *rule.Context) []rule.Finding {
 		if fn.Name == "__constructor" {
 			continue
 		}
-		write := findStorageMutation(fn.Body, c.Src)
-		if write == nil {
+		write, writes := findStorageMutation(fn.Body)
+		if !writes {
 			continue
 		}
-		if hasAuth(fn.Body, c.Src, locals, map[string]bool{fn.Name: true}, maxAuthDepth) {
+		if hasAuth(fn.Body, locals, map[string]bool{fn.Name: true}, maxAuthDepth) {
 			continue
 		}
-		name := fn.Node.ChildByFieldName("name")
+		name, _ := fn.Node.Field("name")
 		out = append(out, rule.At(name,
 			"%s writes storage but no path through it calls require_auth (write at line %d)",
-			fn.Name, int(write.StartPosition().Row)+1))
+			fn.Name, write.Line()))
 	}
 	return out
 }
 
-// findStorageMutation returns the first storage-mutating call in body, or nil.
-func findStorageMutation(body *ts.Node, src []byte) *ts.Node {
-	var found *ts.Node
-	rule.Walk(body, func(n *ts.Node) bool {
-		if found != nil {
+// findStorageMutation returns the first storage-mutating call in body.
+func findStorageMutation(body rule.Node) (rule.Node, bool) {
+	var found rule.Node
+	body.Walk(func(n rule.Node) bool {
+		if found.Valid() {
 			return false
 		}
-		call, ok := rule.AsMethodCall(n, src)
-		if ok && storageMutators[call.Name] && receiverChainHas(call.Recv, src, "storage") {
+		call, ok := rule.AsMethodCall(n)
+		if ok && storageMutators[call.Name] && receiverChainHas(call.Recv, "storage") {
 			found = call.Field
 			return false
 		}
 		return true
 	})
-	return found
+	return found, found.Valid()
 }
 
 // receiverChainHas reports whether name appears as a method in the receiver
@@ -106,9 +102,9 @@ func findStorageMutation(body *ts.Node, src []byte) *ts.Node {
 // receiver of set is `env.storage().persistent()`, and walking down it finds
 // "persistent" then "storage" — which is what separates a storage write from
 // any other .set() in the file.
-func receiverChainHas(recv *ts.Node, src []byte, name string) bool {
-	for n := recv; n != nil; {
-		call, ok := rule.AsMethodCall(n, src)
+func receiverChainHas(recv rule.Node, name string) bool {
+	for n := recv; n.Valid(); {
+		call, ok := rule.AsMethodCall(n)
 		if !ok {
 			return false
 		}
@@ -126,23 +122,23 @@ func receiverChainHas(recv *ts.Node, src []byte, name string) bool {
 // Following calls matters: the idiomatic Soroban shape puts the check in a
 // helper (`fn require_admin(env: &Env) { ...; admin.require_auth(); }`), and a
 // body-only search would flag every contract written that way.
-func hasAuth(body *ts.Node, src []byte, locals map[string]*ts.Node, seen map[string]bool, depth int) bool {
+func hasAuth(body rule.Node, locals map[string]rule.Node, seen map[string]bool, depth int) bool {
 	if depth <= 0 {
 		return false
 	}
 	found := false
-	rule.Walk(body, func(n *ts.Node) bool {
+	body.Walk(func(n rule.Node) bool {
 		if found {
 			return false
 		}
-		if call, ok := rule.AsMethodCall(n, src); ok && authCalls[call.Name] {
+		if call, ok := rule.AsMethodCall(n); ok && authCalls[call.Name] {
 			found = true
 			return false
 		}
-		if callee, ok := rule.AsPlainCall(n, src); ok && !seen[callee] {
+		if callee, ok := rule.AsPlainCall(n); ok && !seen[callee] {
 			if next, isLocal := locals[callee]; isLocal {
 				seen[callee] = true
-				if hasAuth(next, src, locals, seen, depth-1) {
+				if hasAuth(next, locals, seen, depth-1) {
 					found = true
 					return false
 				}

@@ -1,10 +1,6 @@
 package rules
 
-import (
-	ts "github.com/tree-sitter/go-tree-sitter"
-
-	"github.com/use-plumbline/plumbline/internal/rule"
-)
+import "github.com/use-plumbline/plumbline/internal/rule"
 
 // panicMethods abort the invocation with an opaque host error when the value
 // is absent or an error.
@@ -17,7 +13,7 @@ var panicMethods = map[string]bool{
 	"expect": true,
 }
 
-// PanicInContract reports panics reachable from a contract entry point.
+// PanicInContract reports panics in a contract entry point.
 type PanicInContract struct{}
 
 func (PanicInContract) Meta() rule.Meta {
@@ -38,12 +34,12 @@ func (PanicInContract) Meta() rule.Meta {
 
 func (PanicInContract) Check(c *rule.Context) []rule.Finding {
 	var out []rule.Finding
-	// Only entry-point bodies are scanned, so `#[cfg(test)]` modules and
+	// Only entry-point bodies are scanned, so #[cfg(test)] modules and
 	// non-contract impl blocks are excluded by construction. Panics inside
 	// helper functions called from an entry point are not yet reported.
 	for _, fn := range c.ContractFns() {
-		rule.Walk(fn.Body, func(n *ts.Node) bool {
-			if f, ok := panicFinding(n, c.Src, fn.Name); ok {
+		fn.Body.Walk(func(n rule.Node) bool {
+			if f, ok := panicFinding(n, fn.Name); ok {
 				out = append(out, f)
 			}
 			return true
@@ -53,8 +49,8 @@ func (PanicInContract) Check(c *rule.Context) []rule.Finding {
 }
 
 // panicFinding reports n if it is a panicking construct.
-func panicFinding(n *ts.Node, src []byte, fnName string) (rule.Finding, bool) {
-	if name, ok := rule.MacroName(n, src); ok {
+func panicFinding(n rule.Node, fnName string) (rule.Finding, bool) {
+	if name, ok := rule.MacroName(n); ok {
 		// panic_with_error! is the correct way to abort: it carries a
 		// contract error code the caller can match on. Only bare panic!
 		// is a finding.
@@ -64,7 +60,7 @@ func panicFinding(n *ts.Node, src []byte, fnName string) (rule.Finding, bool) {
 		}
 		return rule.Finding{}, false
 	}
-	if call, ok := rule.AsMethodCall(n, src); ok && panicMethods[call.Name] {
+	if call, ok := rule.AsMethodCall(n); ok && panicMethods[call.Name] {
 		return rule.At(call.Field, "%s calls %s(), which aborts with an opaque host "+
 			"error when the value is absent", fnName, call.Name), true
 	}

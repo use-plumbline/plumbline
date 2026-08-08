@@ -2,19 +2,28 @@
 // implements, the value it reports, the context it is handed, and the registry
 // that holds the set of rules to run.
 //
-// Nothing in this package knows about any specific rule, and no rule knows
-// about any other. A rule is handed one already-parsed file and returns what it
-// found there.
+// Nothing here knows about any specific rule, and no rule knows about any
+// other. A rule is handed one already-parsed file and returns what it found.
+//
+// The parser is not part of this API. Rules see [Node], Plumbline's own view of
+// a syntax tree, so that changing or replacing the parser does not touch a
+// single rule.
 package rule
 
 import (
 	"fmt"
 
-	ts "github.com/tree-sitter/go-tree-sitter"
+	"github.com/use-plumbline/plumbline/internal/syntax"
 )
 
-// Severity ranks a finding. A rule declares a default; the engine decides how
-// severities map to exit codes and to GitHub annotation levels.
+// Node is a node of a parsed contract source file.
+//
+// It is an alias rather than a wrapper so that a rule imports one package and
+// gets everything it needs.
+type Node = syntax.Node
+
+// Severity ranks a finding. A rule declares a default; how severities map to
+// exit codes and to annotation levels is decided further out.
 type Severity string
 
 const (
@@ -47,11 +56,9 @@ type Meta struct {
 
 // Finding is one reported problem at one location.
 //
-// A rule sets Message, Line, and Column — use [At], which handles the
-// off-by-one between tree-sitter's 0-indexed points and the 1-indexed
-// positions every consumer expects. The engine stamps Path, RuleID and
-// Severity, so that configuration can remap severity in one place instead of
-// every rule having to consult config.
+// A rule sets Message, Line and Column — use [At], which reads the position
+// off a node. The engine stamps Path, RuleID and Severity, so configuration
+// can remap severity in one place instead of every rule consulting config.
 type Finding struct {
 	Path     string
 	RuleID   string
@@ -62,12 +69,11 @@ type Finding struct {
 }
 
 // At builds a Finding positioned at the start of n.
-func At(n *ts.Node, format string, args ...any) Finding {
-	p := n.StartPosition()
+func At(n Node, format string, args ...any) Finding {
 	return Finding{
 		Message: fmt.Sprintf(format, args...),
-		Line:    int(p.Row) + 1,
-		Column:  int(p.Column) + 1,
+		Line:    n.Line(),
+		Column:  n.Column(),
 	}
 }
 
@@ -79,13 +85,8 @@ type Context struct {
 	// Path is the file path as given to the engine; it appears in output.
 	Path string
 
-	// Src is the exact source the tree was parsed from. Node text must be
-	// read against this rather than a fresh read of the file, or byte
-	// offsets will not line up.
-	Src []byte
-
-	// Root is the tree-sitter root node, a source_file.
-	Root *ts.Node
+	// Root is the file's root node.
+	Root Node
 
 	contractFns    []ContractFn
 	contractFnsSet bool
@@ -98,11 +99,11 @@ type ContractFn struct {
 	Name string
 
 	// Node is the function_item node.
-	Node *ts.Node
+	Node Node
 
-	// Body is the function's block. It is never nil for a function found by
-	// [Context.ContractFns], which skips bodiless signatures.
-	Body *ts.Node
+	// Body is the function's block. It is always valid for a function found
+	// by [Context.ContractFns], which skips bodiless signatures.
+	Body Node
 }
 
 // ContractFns returns the contract's externally callable functions, computed
@@ -110,20 +111,17 @@ type ContractFn struct {
 //
 // This is the one piece of Soroban knowledge the engine hands to every rule.
 // Almost every rule starts with "for each contract entry point ...", and
-// getting that set right is fiddlier than it looks — in tree-sitter's Rust
-// grammar an `#[contractimpl]` attribute is a *preceding sibling* of the impl
-// block, not a child of it. Computing it once here keeps that subtlety in a
-// single tested place instead of copy-pasted into every rule.
+// getting that set right is fiddlier than it looks — in Rust's grammar an
+// `#[contractimpl]` attribute is a preceding sibling of the impl block, not a
+// child of it. Computing it once here keeps that subtlety in a single tested
+// place instead of copy-pasted into every rule.
 func (c *Context) ContractFns() []ContractFn {
 	if !c.contractFnsSet {
-		c.contractFns = findContractFns(c.Root, c.Src)
+		c.contractFns = findContractFns(c.Root)
 		c.contractFnsSet = true
 	}
 	return c.contractFns
 }
-
-// Text returns the source text of n.
-func (c *Context) Text(n *ts.Node) string { return n.Utf8Text(c.Src) }
 
 // Rule is a single lint check.
 //

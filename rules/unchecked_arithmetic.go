@@ -3,15 +3,14 @@ package rules
 import (
 	"strings"
 
-	ts "github.com/tree-sitter/go-tree-sitter"
-
 	"github.com/use-plumbline/plumbline/internal/rule"
 )
 
 // overflowOps are the operators that can carry a value past the bounds of its
-// type. Division is excluded: it cannot overflow except for MIN / -1, and
-// flagging every division to catch that would drown the useful findings.
-// Shifts are not covered yet.
+// type, mapped to the checked_* method that replaces them. Division is
+// excluded: it cannot overflow except for MIN / -1, and flagging every
+// division to catch that would drown the useful findings. Shifts are not
+// covered yet.
 var overflowOps = map[string]string{
 	"+": "add", "-": "sub", "*": "mul",
 	"+=": "add", "-=": "sub", "*=": "mul",
@@ -70,28 +69,28 @@ func (UncheckedArithmetic) Meta() rule.Meta {
 func (UncheckedArithmetic) Check(c *rule.Context) []rule.Finding {
 	var out []rule.Finding
 	for _, fn := range c.ContractFns() {
-		scope := fnScope(fn, c.Src)
-		rule.Walk(fn.Body, func(n *ts.Node) bool {
+		scope := fnScope(fn)
+		fn.Body.Walk(func(n rule.Node) bool {
 			switch n.Kind() {
 			case "binary_expression", "compound_assignment_expr":
 			default:
 				return true
 			}
-			op := n.ChildByFieldName("operator")
-			left := n.ChildByFieldName("left")
-			right := n.ChildByFieldName("right")
-			if op == nil || left == nil || right == nil {
+			op, hasOp := n.Field("operator")
+			left, hasLeft := n.Field("left")
+			right, hasRight := n.Field("right")
+			if !hasOp || !hasLeft || !hasRight {
 				return true
 			}
-			method, overflows := overflowOps[op.Utf8Text(c.Src)]
+			method, overflows := overflowOps[op.Text()]
 			if !overflows {
 				return true
 			}
-			switch maxWidth(exprWidth(left, c.Src, scope), exprWidth(right, c.Src, scope)) {
+			switch maxWidth(exprWidth(left, scope), exprWidth(right, scope)) {
 			case widthWide, widthUnknown:
 				out = append(out, rule.At(n,
 					"%s: %q is unchecked arithmetic on a token-sized integer; use checked_%s or saturating_%s",
-					fn.Name, strings.Join(strings.Fields(c.Text(n)), " "), method, method))
+					fn.Name, strings.Join(strings.Fields(n.Text()), " "), method, method))
 			}
 			return true
 		})
@@ -106,73 +105,74 @@ func (UncheckedArithmetic) Check(c *rule.Context) []rule.Finding {
 // binding can be resolved from ones declared above it. Shadowing in nested
 // blocks is not modelled; a shadowed name takes the width of its last binding,
 // which errs toward reporting.
-func fnScope(fn rule.ContractFn, src []byte) map[string]intWidth {
+func fnScope(fn rule.ContractFn) map[string]intWidth {
 	scope := map[string]intWidth{}
 
-	if params := fn.Node.ChildByFieldName("parameters"); params != nil {
-		for i := uint(0); i < params.NamedChildCount(); i++ {
-			p := params.NamedChild(i)
+	if params, ok := fn.Node.Field("parameters"); ok {
+		for _, p := range params.Children() {
 			if p.Kind() != "parameter" {
 				continue
 			}
-			name, typ := p.ChildByFieldName("pattern"), p.ChildByFieldName("type")
-			if name != nil && typ != nil && name.Kind() == "identifier" {
-				scope[name.Utf8Text(src)] = typeWidth(typ.Utf8Text(src))
+			name, hasName := p.Field("pattern")
+			typ, hasType := p.Field("type")
+			if hasName && hasType && name.Kind() == "identifier" {
+				scope[name.Text()] = typeWidth(typ.Text())
 			}
 		}
 	}
 
-	var lets []*ts.Node
-	rule.Walk(fn.Body, func(n *ts.Node) bool {
+	var lets []rule.Node
+	fn.Body.Walk(func(n rule.Node) bool {
 		if n.Kind() == "let_declaration" {
 			lets = append(lets, n)
 		}
 		return true
 	})
 	for _, l := range lets {
-		name := l.ChildByFieldName("pattern")
-		if name == nil || name.Kind() != "identifier" {
+		name, ok := l.Field("pattern")
+		if !ok || name.Kind() != "identifier" {
 			continue
 		}
-		if typ := l.ChildByFieldName("type"); typ != nil {
-			scope[name.Utf8Text(src)] = typeWidth(typ.Utf8Text(src))
+		if typ, ok := l.Field("type"); ok {
+			scope[name.Text()] = typeWidth(typ.Text())
 			continue
 		}
-		if value := l.ChildByFieldName("value"); value != nil {
-			scope[name.Utf8Text(src)] = exprWidth(value, src, scope)
+		if value, ok := l.Field("value"); ok {
+			scope[name.Text()] = exprWidth(value, scope)
 		}
 	}
 	return scope
 }
 
 // exprWidth works out what is known about the integer width of an expression.
-func exprWidth(n *ts.Node, src []byte, scope map[string]intWidth) intWidth {
+func exprWidth(n rule.Node, scope map[string]intWidth) intWidth {
 	switch n.Kind() {
 	case "identifier":
-		if w, ok := scope[n.Utf8Text(src)]; ok {
+		if w, ok := scope[n.Text()]; ok {
 			return w
 		}
 		return widthUnknown
 
 	case "integer_literal":
-		return literalWidth(n.Utf8Text(src))
+		return literalWidth(n.Text())
 
 	case "binary_expression":
-		left, right := n.ChildByFieldName("left"), n.ChildByFieldName("right")
-		if left == nil || right == nil {
+		left, hasLeft := n.Field("left")
+		right, hasRight := n.Field("right")
+		if !hasLeft || !hasRight {
 			return widthUnknown
 		}
-		return maxWidth(exprWidth(left, src, scope), exprWidth(right, src, scope))
+		return maxWidth(exprWidth(left, scope), exprWidth(right, scope))
 
 	case "type_cast_expression":
-		if typ := n.ChildByFieldName("type"); typ != nil {
-			return typeWidth(typ.Utf8Text(src))
+		if typ, ok := n.Field("type"); ok {
+			return typeWidth(typ.Text())
 		}
 		return widthUnknown
 
 	case "parenthesized_expression", "unary_expression", "reference_expression":
-		if inner := n.NamedChild(0); inner != nil {
-			return exprWidth(inner, src, scope)
+		if inner, ok := n.Child(0); ok {
+			return exprWidth(inner, scope)
 		}
 		return widthUnknown
 	}

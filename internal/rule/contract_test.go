@@ -3,26 +3,27 @@ package rule
 import (
 	"testing"
 
-	ts "github.com/tree-sitter/go-tree-sitter"
-	tsrust "github.com/tree-sitter/tree-sitter-rust/bindings/go"
+	"github.com/use-plumbline/plumbline/internal/syntax"
 )
 
 // parse is a test-local parser so that this package's tests do not depend on
 // the engine.
 func parse(t *testing.T, src string) *Context {
 	t.Helper()
-	p := ts.NewParser()
-	t.Cleanup(p.Close)
-	if err := p.SetLanguage(ts.NewLanguage(tsrust.Language())); err != nil {
-		t.Fatalf("set language: %v", err)
+	p, err := syntax.NewParser()
+	if err != nil {
+		t.Fatalf("new parser: %v", err)
 	}
-	b := []byte(src)
-	tree := p.Parse(b, nil)
+	t.Cleanup(p.Close)
+	tree, err := p.Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
 	t.Cleanup(tree.Close)
-	if tree.RootNode().HasError() {
+	if tree.Root().HasError() {
 		t.Fatalf("fixture does not parse cleanly:\n%s", src)
 	}
-	return &Context{Path: "test.rs", Src: b, Root: tree.RootNode()}
+	return &Context{Path: "test.rs", Root: tree.Root()}
 }
 
 func names(fns []ContractFn) []string {
