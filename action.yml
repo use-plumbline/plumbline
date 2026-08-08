@@ -37,20 +37,35 @@ outputs:
 runs:
   using: composite
   steps:
+    # github.action_path is "." when the action is used from the repository
+    # that defines it (uses: ./), which yields patterns like ".//go.sum" that
+    # the cache backend rejects for containing relative path segments.
+    # Resolving it here makes both the local and the published case absolute.
+    - name: Resolve the action path
+      id: resolve
+      shell: bash
+      run: |
+        root=$(cd "${{ github.action_path }}" && pwd)
+        {
+          echo "gomod=${root}/go.mod"
+          echo "gosum=${root}/go.sum"
+          echo "root=${root}"
+        } >>"$GITHUB_OUTPUT"
+
     - name: Set up Go
       uses: actions/setup-go@v7
       with:
         # Tracks the Go version Plumbline itself declares, so the action
         # cannot drift from the module it builds.
-        go-version-file: ${{ github.action_path }}/go.mod
-        cache-dependency-path: ${{ github.action_path }}/go.sum
+        go-version-file: ${{ steps.resolve.outputs.gomod }}
+        cache-dependency-path: ${{ steps.resolve.outputs.gosum }}
 
     - name: Run Plumbline
       id: plumbline
       shell: bash
       run: ${{ github.action_path }}/action/run.sh
       env:
-        PLUMBLINE_ACTION_PATH: ${{ github.action_path }}
+        PLUMBLINE_ACTION_PATH: ${{ steps.resolve.outputs.root }}
         PLUMBLINE_PATHS: ${{ inputs.paths }}
         PLUMBLINE_FAIL_ON: ${{ inputs.fail-on }}
         PLUMBLINE_FORMAT: ${{ inputs.format }}
