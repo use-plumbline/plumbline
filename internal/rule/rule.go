@@ -49,10 +49,11 @@ type Meta struct {
 //
 // A rule sets Message, Line, and Column — use [At], which handles the
 // off-by-one between tree-sitter's 0-indexed points and the 1-indexed
-// positions every consumer expects. The engine stamps RuleID and Severity, so
-// that configuration can remap severity in one place instead of every rule
-// having to consult config.
+// positions every consumer expects. The engine stamps Path, RuleID and
+// Severity, so that configuration can remap severity in one place instead of
+// every rule having to consult config.
 type Finding struct {
+	Path     string
 	RuleID   string
 	Severity Severity
 	Message  string
