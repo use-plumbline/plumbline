@@ -83,6 +83,16 @@ instead — a test asserts the parser stays confined there.
 - `make lint && make test` must pass before you open a PR. CI runs the same
   things.
 
+## Code of conduct
+
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Reporting a vulnerability
+
+Not through an issue or a PR — see the [security policy](SECURITY.md). A rule
+that misses a bug is not a vulnerability; that one is an ordinary issue, and a
+welcome one.
+
 ## License
 
 Contributions are accepted under the [Apache-2.0](LICENSE) license.
