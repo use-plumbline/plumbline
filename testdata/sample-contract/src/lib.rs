@@ -8,7 +8,8 @@
 //! started reporting things that are not defects.
 
 use soroban_sdk::{
-    contract, contracterror, contractevent, contractimpl, contracttype, token, Address, Env,
+    contract, contracterror, contractevent, contractimpl, contractmeta, contracttype, token,
+    Address, Env,
 };
 
 /// Ledgers close about every five seconds, so this is roughly one day.
@@ -55,6 +56,11 @@ pub struct Withdrawn {
     pub amount: i128,
     pub balance: i128,
 }
+
+contractmeta!(
+    key = "desc",
+    val = "Deposit-and-withdraw vault over a SEP-41 token"
+);
 
 #[contract]
 pub struct Vault;
