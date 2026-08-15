@@ -12,8 +12,10 @@ Rules are **AST checks**, not regex. Contract source is parsed with the
 tree-sitter Rust grammar, so a rule can ask structural questions — "does any path
 through this function reach a `require_auth` call?" — instead of matching text.
 
-> **Status: early.** The engine and the first three rules work and are tested.
-> Nothing is stable yet, and `.plumbline.toml` configuration is not implemented.
+> **Status: early.** Three rules, released as `v0.1.0`. They are tested, and
+> checked against real third-party contracts so they do not fire on idiomatic
+> Soroban — but three rules is a floor under review, not coverage. See
+> [what it does not catch](#what-it-does-not-catch).
 
 ## About
 
@@ -48,21 +50,43 @@ toolchain and no service to sign up for. It is early — see
 
 ## Use it in CI
 
+Drop this in as `.github/workflows/plumbline.yml`. It is the whole file — no
+Rust toolchain, no service to sign up for, no token beyond the default one.
+
 ```yaml
-- uses: use-plumbline/plumbline@main
-  with:
-    paths: contracts/
+name: Plumbline
+
+on: [pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: use-plumbline/plumbline@v0.1.0
+        with:
+          paths: contracts/
 ```
 
-Options and exit codes: [docs/github-action.md](docs/github-action.md).
+Findings arrive as inline annotations on the changed files. `missing-auth` is
+an error and fails the build; the other two are warnings and do not.
+
+Pin the version. `@main` moves.
+
+Inputs, outputs, exit codes and more recipes:
+[docs/github-action.md](docs/github-action.md).
 
 ## Use it locally
 
 ```sh
 make build
-./bin/plumbline contracts/          # lint a directory
-./bin/plumbline --list-rules        # what it checks
-./bin/plumbline --explain missing-auth
+./bin/plumbline contracts/                # lint a directory
+./bin/plumbline --list-rules              # what it checks
+./bin/plumbline --explain missing-auth    # why, and how to fix it
+./bin/plumbline --format json contracts/  # for tooling
 ```
 
 ## The rules
@@ -76,11 +100,44 @@ make build
 Each rule carries its own "why it matters" and "how to fix it" — run
 `plumbline --explain <rule>`.
 
+## Configuration
+
+Optional. Plumbline needs no configuration to be useful, and
+`.plumbline.toml` exists so that one rule you disagree with means turning that
+rule down rather than deleting the action:
+
+```toml
+exclude = ["contracts/vendor/**"]
+
+[rules]
+missing-auth = "warning"   # "error", "warning", "note", or "off"
+```
+
+Full reference: [docs/configuration.md](docs/configuration.md).
+
+## What it does not catch
+
+Plumbline is a linter, not an audit, and it is syntactic — it sees names and
+shapes, not resolved types. Three rules is three rules. A clean run means the
+rules it has did not fire.
+
+Nothing here checks reentrancy, token transfer accounting, TTL and archival
+correctness, oracle or price manipulation, signature and replay handling,
+upgrade safety, or cross-contract call ordering. There is no dataflow analysis:
+a rule reads one file at a time and does not know what a helper in another
+module does.
+
+The rules it does have carry known blind spots, listed in the
+[v0.1.0 release notes](https://github.com/use-plumbline/plumbline/releases/tag/v0.1.0).
+
 ## Documentation
 
 - [Architecture](docs/architecture.md) — how the engine, rules and parser fit together
-- [Adding a rule](docs/adding-a-rule.md) — the `Rule` interface, the fixture convention, and how to see the AST
+- [Configuration](docs/configuration.md) — `.plumbline.toml`, severities and excludes
 - [The GitHub Action](docs/github-action.md) — inputs, outputs and exit codes
+- [JSON output](docs/json-output.md) — the schema, for tooling
+- [Adding a rule](docs/adding-a-rule.md) — the `Rule` interface, the fixture convention, and how to see the AST
+- [Releasing](RELEASING.md) — how versions are cut and what one promises
 - [Contributing](CONTRIBUTING.md)
 - [Code of Conduct](CODE_OF_CONDUCT.md)
 - [Security policy](SECURITY.md) — how to report a vulnerability, and what counts as one
