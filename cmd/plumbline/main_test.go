@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -109,6 +110,56 @@ func TestBadConfigIsAUsageError(t *testing.T) {
 				t.Error("nothing was written to stderr explaining the failure")
 			}
 		})
+	}
+}
+
+// The JSON report is a contract with whatever consumes it, so the test asserts
+// on the parsed document rather than on the text of it.
+func TestJSONOutput(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	args := []string{"--format", "json", "--fail-on", "never", "../../testdata/rules/missing-auth/fail.rs"}
+	if got := run(args, &stdout, &stderr); got != exitClean {
+		t.Fatalf("exit %d: %s", got, &stderr)
+	}
+
+	var doc struct {
+		SchemaVersion int `json:"schemaVersion"`
+		Findings      []struct {
+			Rule     string `json:"rule"`
+			Severity string `json:"severity"`
+			File     string `json:"file"`
+			Line     int    `json:"line"`
+			Message  string `json:"message"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &doc); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\n%s", err, &stdout)
+	}
+	if doc.SchemaVersion == 0 {
+		t.Error("no schemaVersion in the output")
+	}
+	if len(doc.Findings) == 0 {
+		t.Fatalf("no findings reported for a fixture that should fail:\n%s", &stdout)
+	}
+	f := doc.Findings[0]
+	if f.Rule != "missing-auth" || f.Severity != "error" || f.Line == 0 || f.Message == "" {
+		t.Errorf("finding is missing information: %+v", f)
+	}
+	if !strings.HasSuffix(f.File, "fail.rs") {
+		t.Errorf("file is %q, want the path that was linted", f.File)
+	}
+}
+
+// Nothing but the report may reach stdout in JSON mode, or `plumbline | jq`
+// breaks the first time a file cannot be parsed.
+func TestJSONOutputIsTheOnlyThingOnStdout(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	args := []string{"--format", "json", "../../testdata/rules/missing-auth/pass.rs"}
+	if got := run(args, &stdout, &stderr); got != exitClean {
+		t.Fatalf("exit %d: %s", got, &stderr)
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &map[string]any{}); err != nil {
+		t.Fatalf("stdout is not exactly one JSON document: %v\n%s", err, &stdout)
 	}
 }
 

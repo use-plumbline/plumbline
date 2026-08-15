@@ -23,10 +23,14 @@ const (
 	// FormatGitHub emits GitHub Actions workflow commands, which the runner
 	// turns into inline annotations on a pull request diff.
 	FormatGitHub Format = "github"
+
+	// FormatJSON emits one machine-readable object, for tooling that wants
+	// to do something with the findings other than print them.
+	FormatJSON Format = "json"
 )
 
 // Formats lists every supported format, for flag help and validation.
-var Formats = []Format{FormatText, FormatGitHub}
+var Formats = []Format{FormatText, FormatGitHub, FormatJSON}
 
 // Valid reports whether f is a format Write understands.
 func (f Format) Valid() bool {
@@ -43,6 +47,8 @@ func Write(w io.Writer, res *engine.Result, f Format) error {
 	switch f {
 	case FormatGitHub:
 		return writeGitHub(w, res)
+	case FormatJSON:
+		return writeJSON(w, res)
 	case FormatText:
 		return writeText(w, res)
 	}
