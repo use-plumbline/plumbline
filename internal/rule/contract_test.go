@@ -102,6 +102,33 @@ impl C {
 			want: []string{"a"},
 		},
 		{
+			// A mock contract in a test module is not compiled into the
+			// deployed wasm, so no rule that protects a deployed contract
+			// applies to it.
+			name: "contract inside a #[cfg(test)] module",
+			src: `#[cfg(test)]
+mod tests {
+    #[contractimpl]
+    impl Mock {
+        pub fn a(env: Env) {}
+    }
+}`,
+			want: nil,
+		},
+		{
+			// Only the test predicate is excluded. A feature-gated module
+			// does end up on chain when the feature is on.
+			name: "contract inside a feature-gated module",
+			src: `#[cfg(feature = "x")]
+mod inner {
+    #[contractimpl]
+    impl C {
+        pub fn a(env: Env) {}
+    }
+}`,
+			want: []string{"a"},
+		},
+		{
 			name: "a preceding non-attribute item does not leak the attribute",
 			src: `#[contractimpl]
 impl A {

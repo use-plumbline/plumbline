@@ -45,6 +45,24 @@ var narrowTypes = map[string]bool{
 	"u8": true, "u16": true, "u32": true, "u64": true, "usize": true,
 }
 
+// narrowMethods are SDK accessors whose return type is known to be narrower
+// than 128 bits, so arithmetic involving one is not token arithmetic.
+//
+// Without these the rule reports every `env.ledger().sequence() + n`, which is
+// a TTL or expiry calculation on a u32 and cannot be a balance — the single
+// most common shape it was getting wrong on real contracts.
+//
+// Verified against docs.rs/soroban-sdk: Ledger::sequence -> u32,
+// Ledger::timestamp -> u64, Ledger::protocol_version -> u32, and
+// Vec::len -> u32 (Map, Bytes and String agree; std's usize is narrow too, so
+// the classification holds either way).
+var narrowMethods = map[string]bool{
+	"sequence":         true,
+	"timestamp":        true,
+	"protocol_version": true,
+	"len":              true,
+}
+
 // UncheckedArithmetic reports unchecked 128-bit arithmetic in contract
 // entry points.
 type UncheckedArithmetic struct{}
@@ -175,9 +193,15 @@ func exprWidth(n rule.Node, scope map[string]intWidth) intWidth {
 			return exprWidth(inner, scope)
 		}
 		return widthUnknown
+
+	case "call_expression":
+		if call, ok := rule.AsMethodCall(n); ok && narrowMethods[call.Name] {
+			return widthNarrow
+		}
+		return widthUnknown
 	}
-	// Calls, field accesses, indexes and macros are opaque without type
-	// resolution, so they stay unknown.
+	// Field accesses, indexes, macros and every other call are opaque
+	// without type resolution, so they stay unknown.
 	return widthUnknown
 }
 

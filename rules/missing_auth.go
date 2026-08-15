@@ -23,6 +23,26 @@ var authCalls = map[string]bool{
 	"require_auth_for_args": true,
 }
 
+// authAttrs are attribute macros that expand into an authorization check
+// before the function body runs, so a function carrying one is authorized even
+// though no require_auth is visible in its source.
+//
+// Verified against docs.rs/stellar-macros 0.7.2, the proc-macro crate of
+// OpenZeppelin's stellar-contracts: only_owner and only_admin "require
+// authorization from the owner/admin before executing the function body", and
+// only_role / only_any_role check the role "and require authorization".
+//
+// has_role and has_any_role are deliberately absent — they check that an
+// address holds a role but do not require it to have authorized the call, so a
+// function whose only gate is has_role really is missing an auth check.
+// when_paused and when_not_paused are pause-state checks, not authorization.
+var authAttrs = []string{
+	"only_owner",
+	"only_admin",
+	"only_role",
+	"only_any_role",
+}
+
 // maxAuthDepth bounds how far the search follows helper calls looking for an
 // authorization check. Four frames covers the idiomatic
 // `entry -> require_admin -> admin.require_auth()` shape with room to spare;
@@ -65,6 +85,16 @@ func (MissingAuth) Check(c *rule.Context) []rule.Finding {
 		if fn.Name == "__constructor" {
 			continue
 		}
+		if hasAuthAttribute(fn.Node) {
+			continue
+		}
+		// A one-shot initializer is the other shape that is authorized
+		// without an auth check, for the same reason a constructor is:
+		// it can only ever succeed once, so there is no ongoing authority
+		// to protect.
+		if hasOneShotGuard(fn.Body) {
+			continue
+		}
 		write, writes := findStorageMutation(fn.Body)
 		if !writes {
 			continue
@@ -78,6 +108,79 @@ func (MissingAuth) Check(c *rule.Context) []rule.Finding {
 			fn.Name, write.Line()))
 	}
 	return out
+}
+
+// hasAuthAttribute reports whether fn is guarded by an authorizing attribute
+// macro. The check is on the attribute's name, so it holds whether the macro
+// is written bare or path-qualified, and whether or not it takes arguments.
+func hasAuthAttribute(fn rule.Node) bool {
+	for _, attr := range authAttrs {
+		if rule.HasAttribute(fn, attr) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasOneShotGuard reports whether body opens with the canonical Soroban
+// "initialize once" check:
+//
+//	if env.storage().instance().has(&DataKey::Admin) {
+//	    return Err(Error::AlreadyInitialized);
+//	}
+//
+// A function shaped like that cannot be called a second time, so it carries no
+// standing authority for an auth check to protect — the same argument that
+// exempts __constructor. Contracts that predate constructor support use it for
+// exactly that job, and flagging it would fire on most of the ecosystem.
+//
+// The match is deliberately narrow. The condition must be the storage `has`
+// call itself, so the opposite guard — `if !...has(&k) { return Err(NotInit) }`,
+// which asserts the contract *is* initialized and authorizes nothing — is not
+// mistaken for it.
+func hasOneShotGuard(body rule.Node) bool {
+	found := false
+	body.Walk(func(n rule.Node) bool {
+		if found || n.Kind() != "if_expression" {
+			return !found
+		}
+		cond, hasCond := n.Field("condition")
+		conseq, hasConseq := n.Field("consequence")
+		if !hasCond || !hasConseq {
+			return true
+		}
+		call, isCall := rule.AsMethodCall(cond)
+		if !isCall || call.Name != "has" || !receiverChainHas(call.Recv, "storage") {
+			return true
+		}
+		if exitsEarly(conseq) {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// exitsEarly reports whether block leaves the function without running the
+// rest of it.
+func exitsEarly(block rule.Node) bool {
+	found := false
+	block.Walk(func(n rule.Node) bool {
+		if found {
+			return false
+		}
+		if n.Kind() == "return_expression" {
+			found = true
+			return false
+		}
+		if name, ok := rule.MacroName(n); ok && (name == "panic" || name == "panic_with_error") {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 // findStorageMutation returns the first storage-mutating call in body.

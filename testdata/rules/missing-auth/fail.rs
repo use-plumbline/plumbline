@@ -52,4 +52,21 @@ impl Vault {
     pub fn purge(env: Env, who: Address) { //~ missing-auth
         env.storage().persistent().remove(&DataKey::Balance(who));
     }
+
+    /// The opposite of an initialization guard: this one asserts the contract
+    /// *is* already set up, which authorizes nothing. It must not be mistaken
+    /// for the one-shot check that makes an initializer safe.
+    pub fn reconfigure(env: Env, paused: bool) { //~ missing-auth
+        if !env.storage().instance().has(&DataKey::Admin) {
+            panic!("not initialized");
+        }
+        env.storage().instance().set(&DataKey::Paused, &paused);
+    }
+
+    /// `#[when_not_paused]` is a state check, not an authorization check —
+    /// pausing a contract says nothing about who is calling it.
+    #[when_not_paused]
+    pub fn set_fee(env: Env, fee: i128) { //~ missing-auth
+        env.storage().instance().set(&DataKey::Paused, &fee);
+    }
 }

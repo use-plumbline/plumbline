@@ -11,11 +11,28 @@ import (
 
 // skippedDirs are never descended into. Cargo's build output contains vendored
 // and generated Rust that is not the contract under review, and linting it is
-// slow and pure noise.
+// slow and pure noise. `tests/` is Cargo's integration-test directory and
+// `test/` is the usual name for a `#[cfg(test)] mod test;` submodule: the
+// contracts declared in either are mocks that exist to be called by a test,
+// and they are never compiled into a deployed wasm.
 var skippedDirs = map[string]bool{
 	"target":       true,
 	"node_modules": true,
 	".git":         true,
+	"tests":        true,
+	"test":         true,
+}
+
+// skippedFiles are the conventional names of a crate's unit-test module.
+//
+// The mock contracts in them are the largest single source of noise in a real
+// workspace — they are written to exercise one path, not to be safe on chain,
+// so a mock with no require_auth and an .unwrap() in it is correct code that
+// every rule would report. Naming a file on the command line still lints it,
+// so `plumbline src/test.rs` does what it says.
+var skippedFiles = map[string]bool{
+	"test.rs":  true,
+	"tests.rs": true,
 }
 
 // DiscoverRust expands paths into a sorted, deduplicated list of .rs files.
@@ -52,7 +69,7 @@ func DiscoverRust(paths []string) ([]string, error) {
 				}
 				return nil
 			}
-			if strings.HasSuffix(d.Name(), ".rs") {
+			if strings.HasSuffix(d.Name(), ".rs") && !skippedFiles[d.Name()] {
 				add(path)
 			}
 			return nil

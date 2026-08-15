@@ -17,6 +17,12 @@ pub enum Error {
     Overflow = 1,
 }
 
+#[contracttype]
+#[derive(Clone)]
+pub struct Config {
+    pub epoch_length: u32,
+}
+
 #[contract]
 pub struct Vault;
 
@@ -60,5 +66,28 @@ impl Vault {
     /// overflowing one at build time.
     pub fn bump_ttl(env: Env) {
         env.storage().instance().extend_ttl(120 * 17280, 180 * 17280);
+    }
+
+    /// Ledger arithmetic is expiry and TTL work, not money. Ledger::sequence
+    /// returns u32 and Ledger::timestamp returns u64, verified against
+    /// docs.rs/soroban-sdk, so neither can be a token amount.
+    pub fn expiry(env: Env, window: u32) -> u32 {
+        let deadline = env.ledger().timestamp() + 3600;
+        let _ = deadline;
+        env.ledger().sequence() + window
+    }
+
+    /// The type flows through an unannotated binding the same way, so an
+    /// epoch derived from the ledger sequence stays out of scope even when
+    /// the other operand cannot be resolved at all.
+    pub fn epoch_end(env: Env, config: Config) -> u32 {
+        let epoch = env.ledger().sequence() / config.epoch_length;
+        config.epoch_length * (epoch + 1) - 1
+    }
+
+    /// A collection length is u32 on every Soroban container.
+    pub fn next_index(env: Env, entries: soroban_sdk::Vec<Address>) -> u32 {
+        let _ = env;
+        entries.len() + 1
     }
 }

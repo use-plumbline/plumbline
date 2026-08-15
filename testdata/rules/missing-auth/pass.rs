@@ -2,6 +2,7 @@
 //! Every state-mutating entry point here has authorization on its path, so
 //! missing-auth must stay silent on this file.
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, IntoVal};
+use stellar_macros::{only_owner, when_not_paused};
 
 #[contracttype]
 #[derive(Clone)]
@@ -71,5 +72,57 @@ impl Vault {
     /// entry with ExtendFootprintTTLOp without the contract's involvement.
     pub fn bump(env: Env) {
         env.storage().instance().extend_ttl(120 * 17280, 180 * 17280);
+    }
+
+    /// A one-shot initializer, the pre-constructor way of setting an admin.
+    /// It refuses to run twice, so there is no standing authority to protect.
+    pub fn init(env: Env, admin: Address) -> Result<(), Error> {
+        if env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::AlreadyInitialized);
+        }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        Ok(())
+    }
+
+    /// The same guard written as a panic rather than a returned error.
+    pub fn init_panicking(env: Env, admin: Address) {
+        if env.storage().instance().has(&DataKey::Admin) {
+            panic!("already initialized");
+        }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+    }
+
+    /// `#[only_owner]` expands to an ownership check and a require_auth before
+    /// the body runs, so the authorization is real even though it is invisible
+    /// here. Verified against docs.rs/stellar-macros 0.7.2.
+    #[only_owner]
+    pub fn set_owner_fee(env: Env, fee: i128) {
+        env.storage().instance().set(&DataKey::Paused, &fee);
+    }
+
+    /// Stacked attributes: the authorizing one still has to be found when it
+    /// is not the attribute nearest the function.
+    #[only_role(operator, "manager")]
+    #[when_not_paused]
+    pub fn set_operator_fee(env: Env, fee: i128) {
+        env.storage().instance().set(&DataKey::Paused, &fee);
+    }
+}
+
+/// A mock contract inside a `#[cfg(test)] mod` is never compiled into the
+/// deployed wasm, so the rules that protect a deployed contract do not apply
+/// to it.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[contract]
+    pub struct MockToken;
+
+    #[contractimpl]
+    impl MockToken {
+        pub fn set_balance(env: Env, who: Address, amount: i128) {
+            env.storage().persistent().set(&DataKey::Balance(who), &amount);
+        }
     }
 }

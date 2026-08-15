@@ -67,6 +67,13 @@ func TestDiscoverRust(t *testing.T) {
 	// is never about the contract under review.
 	write(t, dir, "target/debug/generated.rs", "")
 	write(t, dir, "node_modules/pkg/d.rs", "")
+	// Rust's test sources hold mock contracts written to exercise one path.
+	// They are never deployed, so holding them to the rules would report
+	// defects that cannot reach a ledger.
+	write(t, dir, "src/test.rs", "")
+	write(t, dir, "src/tests.rs", "")
+	write(t, dir, "tests/integration.rs", "")
+	write(t, dir, "src/test/helpers.rs", "")
 
 	got, err := DiscoverRust([]string{dir})
 	if err != nil {
@@ -88,16 +95,19 @@ func TestDiscoverRust(t *testing.T) {
 }
 
 // A path naming a file is taken as given, so `plumbline thing.txt` does what
-// it says rather than silently finding nothing.
+// it says rather than silently finding nothing — and so the test sources that
+// walking skips can still be linted on request.
 func TestDiscoverRustTakesNamedFilesAsGiven(t *testing.T) {
 	dir := t.TempDir()
-	path := write(t, dir, "contract.txt", "")
-	got, err := DiscoverRust([]string{path})
-	if err != nil {
-		t.Fatalf("discover: %v", err)
-	}
-	if len(got) != 1 || got[0] != path {
-		t.Fatalf("got %v, want [%s]", got, path)
+	for _, name := range []string{"contract.txt", "src/test.rs"} {
+		path := write(t, dir, name, "")
+		got, err := DiscoverRust([]string{path})
+		if err != nil {
+			t.Fatalf("discover: %v", err)
+		}
+		if len(got) != 1 || got[0] != path {
+			t.Fatalf("got %v, want [%s]", got, path)
+		}
 	}
 }
 

@@ -12,6 +12,13 @@ const contractImplAttr = "contractimpl"
 func findContractFns(root Node) []ContractFn {
 	var out []ContractFn
 	root.Walk(func(item Node) bool {
+		// A contract declared inside `#[cfg(test)] mod tests` is a mock
+		// built to exercise one path from a test. It is not compiled into
+		// the deployed wasm, so holding it to the rules that protect a
+		// deployed contract reports defects that cannot reach a ledger.
+		if item.Kind() == "mod_item" && isCfgTest(item) {
+			return false
+		}
 		if item.Kind() != "impl_item" || !HasAttribute(item, contractImplAttr) {
 			return true
 		}
@@ -48,6 +55,22 @@ func HasAttribute(item Node, name string) bool {
 			return false
 		}
 		if attributeName(prev) == name {
+			return true
+		}
+	}
+	return false
+}
+
+// isCfgTest reports whether item carries `#[cfg(test)]`.
+//
+// It matches the exact predicate rather than any `cfg`, so `#[cfg(feature =
+// "x")]` — which does end up in the deployed wasm — is still linted.
+func isCfgTest(item Node) bool {
+	for prev, ok := item.PrevSibling(); ok; prev, ok = prev.PrevSibling() {
+		if prev.Kind() != "attribute_item" {
+			return false
+		}
+		if attr, ok := prev.Child(0); ok && strings.Join(strings.Fields(attr.Text()), "") == "cfg(test)" {
 			return true
 		}
 	}
