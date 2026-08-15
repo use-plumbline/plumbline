@@ -21,6 +21,15 @@ if [ ${#paths[@]} -eq 0 ]; then
   paths=(".")
 fi
 
+# An unset config input means "use .plumbline.toml if the repository has one",
+# which is what the linter already does when it is given no --config. Passing
+# the flag through only when it was asked for keeps that default intact — and
+# keeps a named-but-missing file an error rather than a silent fallback.
+config_args=()
+if [ -n "${PLUMBLINE_CONFIG:-}" ]; then
+  config_args=(--config "$PLUMBLINE_CONFIG")
+fi
+
 workdir="${RUNNER_TEMP:-/tmp}"
 binary="${workdir}/plumbline"
 output="${workdir}/plumbline-output.txt"
@@ -34,7 +43,7 @@ echo "::endgroup::"
 # runner's log to become annotations at all. tee keeps a copy for counting.
 # PIPESTATUS is read before anything else can overwrite it.
 set +e
-"$binary" --format "$format" --fail-on "$fail_on" "${paths[@]}" | tee "$output"
+"$binary" --format "$format" --fail-on "$fail_on" "${config_args[@]}" "${paths[@]}" | tee "$output"
 status=${PIPESTATUS[0]}
 set -e
 

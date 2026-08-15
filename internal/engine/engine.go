@@ -18,12 +18,17 @@ import (
 type Engine struct {
 	registry *rule.Registry
 
-	// severity overrides a rule's default severity by rule ID. It is empty
-	// today; .plumbline.toml will populate it without any rule changing.
+	// severity overrides a rule's default severity by rule ID. It is
+	// populated from .plumbline.toml without any rule changing.
 	severity map[string]rule.Severity
 
 	// disabled turns rules off by ID. Same story.
 	disabled map[string]bool
+
+	// excluded reports whether a discovered file should be left alone. It
+	// is nil unless configuration set it; the pattern syntax is the config
+	// package's business, not the engine's.
+	excluded func(path string) bool
 }
 
 // New returns an Engine that runs every rule in reg with its default severity.
@@ -40,6 +45,10 @@ func (e *Engine) SetSeverity(ruleID string, s rule.Severity) { e.severity[ruleID
 
 // Disable stops a rule from running.
 func (e *Engine) Disable(ruleID string) { e.disabled[ruleID] = true }
+
+// SetExcluded installs a predicate that drops discovered files before they are
+// read. An excluded file is not parsed, not linted, and not counted.
+func (e *Engine) SetExcluded(fn func(path string) bool) { e.excluded = fn }
 
 // Skipped is a file the engine declined to lint, and why.
 type Skipped struct {
@@ -84,6 +93,12 @@ func (e *Engine) Run(paths []string) (*Result, error) {
 
 	res := &Result{}
 	for _, path := range files {
+		// Exclusion is applied after discovery rather than during the
+		// walk, so a path named directly on the command line obeys the
+		// same patterns as one found by walking a directory.
+		if e.excluded != nil && e.excluded(path) {
+			continue
+		}
 		src, err := os.ReadFile(path)
 		if err != nil {
 			res.Skipped = append(res.Skipped, Skipped{path, err.Error()})

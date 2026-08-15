@@ -204,6 +204,30 @@ func TestSeverityOverrideAndDisable(t *testing.T) {
 	}
 }
 
+// An excluded file is dropped before it is read, so it costs nothing and
+// cannot contribute a skip or a finding.
+func TestExcludedFilesAreNotRead(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "keep.rs", contractSrc)
+	write(t, dir, "drop.rs", contractSrc)
+
+	e := New(registry(t, writesStorage{rule.SeverityError}))
+	e.SetExcluded(func(path string) bool { return filepath.Base(path) == "drop.rs" })
+	res, err := e.Run([]string{dir})
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if res.Linted != 1 {
+		t.Errorf("linted %d files, want 1", res.Linted)
+	}
+	if len(res.Findings) != 1 || filepath.Base(res.Findings[0].Path) != "keep.rs" {
+		t.Errorf("excluded file was linted: %+v", res.Findings)
+	}
+	if len(res.Skipped) != 0 {
+		t.Errorf("an excluded file was reported as skipped: %+v", res.Skipped)
+	}
+}
+
 func TestFindingsAreSortedDeterministically(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, "b.rs", contractSrc)

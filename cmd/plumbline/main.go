@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/use-plumbline/plumbline/internal/config"
 	"github.com/use-plumbline/plumbline/internal/engine"
 	"github.com/use-plumbline/plumbline/internal/report"
 	"github.com/use-plumbline/plumbline/internal/rule"
@@ -35,6 +36,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var (
 		format    = fs.String("format", string(report.FormatText), "output format: "+formatList())
 		failOn    = fs.String("fail-on", string(rule.SeverityError), "lowest severity that fails the run: error, warning, note, or never")
+		cfgPath   = fs.String("config", "", "path to a configuration file (default: ./"+config.FileName+" if present)")
 		listRules = fs.Bool("list-rules", false, "list the rules and exit")
 		explain   = fs.String("explain", "", "print the full documentation for one rule and exit")
 		showVer   = fs.Bool("version", false, "print the version and exit")
@@ -83,7 +85,16 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return exitUsage
 	}
 
-	res, err := engine.New(registry).Run(paths)
+	cfg, err := loadConfig(*cfgPath, registry)
+	if err != nil {
+		printf(stderr, "plumbline: %v\n", err)
+		return exitUsage
+	}
+
+	eng := engine.New(registry)
+	cfg.Apply(eng)
+
+	res, err := eng.Run(paths)
 	if err != nil {
 		printf(stderr, "plumbline: %v\n", err)
 		return exitUsage
@@ -99,6 +110,19 @@ func run(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 	return exitClean
+}
+
+// loadConfig resolves the configuration for a run.
+//
+// A path given with --config must exist: someone who names a file and gets the
+// defaults because of a typo has been silently ignored. A file merely found in
+// the working directory is optional, so Plumbline works the moment the action
+// is added to a workflow.
+func loadConfig(path string, reg *rule.Registry) (*config.Config, error) {
+	if path != "" {
+		return config.Load(path, reg)
+	}
+	return config.Discover(".", reg)
 }
 
 // printf writes to w and deliberately drops the error. Every caller is

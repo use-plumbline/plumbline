@@ -22,13 +22,23 @@ inputs:
   format:
     description: |
       Output format. "github" emits the workflow commands that become inline
-      annotations; "text" is easier to read when debugging a workflow.
+      annotations; "text" is easier to read when debugging a workflow; "json"
+      is for a later step that wants to do something with the findings.
     required: false
     default: github
+  config:
+    description: |
+      Path to a Plumbline configuration file. Defaults to .plumbline.toml in
+      the repository root when that file exists, and to Plumbline's own
+      defaults when it does not.
+    required: false
+    default: ""
 
 outputs:
   findings:
-    description: Number of findings reported.
+    description: |
+      Number of findings reported. Only populated when format is "github",
+      which is the default; other formats leave it empty.
     value: ${{ steps.plumbline.outputs.findings }}
   exit-code:
     description: The linter's exit code — 0 clean, 1 findings at or above fail-on.
@@ -69,3 +79,4 @@ runs:
         PLUMBLINE_PATHS: ${{ inputs.paths }}
         PLUMBLINE_FAIL_ON: ${{ inputs.fail-on }}
         PLUMBLINE_FORMAT: ${{ inputs.format }}
+        PLUMBLINE_CONFIG: ${{ inputs.config }}
