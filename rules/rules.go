@@ -14,6 +14,7 @@ import (
 // its file and one line here — a diff a reviewer can read end to end.
 func all() []rule.Rule {
 	return []rule.Rule{
+		ContractmetaMissing{},
 		MissingAuth{},
 		PanicInContract{},
 		UncheckedArithmetic{},
