@@ -13,7 +13,7 @@ type MissingReinitGuard struct{}
 func (MissingReinitGuard) Meta() rule.Meta {
 	return rule.Meta{
 		ID:       "missing-reinit-guard",
-		Severity: rule.SeverityWarning,
+		Severity: rule.SeverityError,
 		Summary:  "An initializer or privileged storage write has no reinitialization guard.",
 		Why:      "An initializer that can run twice may let a caller replace an admin, owner, or configuration value after deployment. The contract must reject a second call before mutating state.",
 		Fix:      "At the start of the initializer, check the instance storage key with has(...) or get(...).is_some() and return or panic on the already-initialized path before writing the key.",
