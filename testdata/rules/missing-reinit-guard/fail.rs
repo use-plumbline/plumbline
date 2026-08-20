@@ -10,20 +10,20 @@ pub struct Unsafe;
 
 #[contractimpl]
 impl Unsafe {
-    pub fn initialize(env: Env, admin: Address) { //~ missing-reinit-guard
-        env.storage().instance().set(&DataKey::Admin, &admin);
+    pub fn initialize(env: Env, admin: Address) {
+        env.storage().instance().set(&DataKey::Admin, &admin); //~ missing-reinit-guard
     }
 
-    pub fn set_owner(env: Env, owner: Address) { //~ missing-reinit-guard
-        env.storage().instance().set(&DataKey::Owner, &owner);
+    pub fn set_owner(env: Env, owner: Address) {
+        env.storage().instance().set(&DataKey::Owner, &owner); //~ missing-reinit-guard
     }
 
-    pub fn update_config(env: Env, value: i128) { //~ missing-reinit-guard
-        env.storage().instance().update(&DataKey::Config, value);
+    pub fn update_config(env: Env, value: i128) {
+        env.storage().instance().update(&DataKey::Config, value); //~ missing-reinit-guard
     }
 
-    pub fn setup(env: Env, value: i128) { //~ missing-reinit-guard
-        env.storage().persistent().set(&DataKey::Value, &value);
+    pub fn setup(env: Env, value: i128) {
+        env.storage().persistent().set(&DataKey::Value, &value); //~ missing-reinit-guard
     }
 
     pub fn write_value(env: Env, value: i128) {

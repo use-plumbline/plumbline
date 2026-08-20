@@ -13,7 +13,7 @@ type MissingReinitGuard struct{}
 func (MissingReinitGuard) Meta() rule.Meta {
 	return rule.Meta{
 		ID:       "missing-reinit-guard",
-		Severity: rule.SeverityWarning,
+		Severity: rule.SeverityError,
 		Summary:  "An initializer or privileged storage write has no reinitialization guard.",
 		Why:      "An initializer that can run twice may let a caller replace an admin, owner, or configuration value after deployment. The contract must reject a second call before mutating state.",
 		Fix:      "At the start of the initializer, check the instance storage key with has(...) or get(...).is_some() and return or panic on the already-initialized path before writing the key.",
@@ -30,8 +30,10 @@ func (MissingReinitGuard) Check(c *rule.Context) []rule.Finding {
 			continue
 		}
 		if initializerName(fn.Name) || writesPrivilegedKey(fn.Body) {
-			name, _ := fn.Node.Field("name")
-			out = append(out, rule.At(name, "%s can mutate initialization state without a one-shot has/get guard", fn.Name))
+			write, _ := findStorageMutation(fn.Body)
+			out = append(out, rule.At(write,
+				"%s can mutate initialization state without a one-shot has/get guard",
+				fn.Name))
 		}
 	}
 	return out
