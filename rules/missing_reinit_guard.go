@@ -30,8 +30,10 @@ func (MissingReinitGuard) Check(c *rule.Context) []rule.Finding {
 			continue
 		}
 		if initializerName(fn.Name) || writesPrivilegedKey(fn.Body) {
-			name, _ := fn.Node.Field("name")
-			out = append(out, rule.At(name, "%s can mutate initialization state without a one-shot has/get guard", fn.Name))
+			write, _ := findStorageMutation(fn.Body)
+			out = append(out, rule.At(write,
+				"%s can mutate initialization state without a one-shot has/get guard",
+				fn.Name))
 		}
 	}
 	return out
