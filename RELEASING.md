@@ -67,19 +67,23 @@ Releases are cut from `main`, which must be green.
 
 2. **Run against real contracts.** The rules exist to be trusted, and the
    only way to know a change did not start firing on idiomatic Soroban is to
-   point it at some. Build the binary and run it over a few third-party
-   workspaces — [stellar/soroban-examples][examples] and
-   [OpenZeppelin/stellar-contracts][oz] are the standing corpus:
+   point it at some. The standing corpus — [stellar/soroban-examples][examples]
+   and [OpenZeppelin/stellar-contracts][oz] — is pinned by commit in
+   [corpus/repos.txt](corpus/repos.txt):
 
    ```sh
-   make build
-   ./bin/plumbline --fail-on never /path/to/soroban-examples
+   make corpus
    ```
 
-   Read every finding. Anything the rules got wrong about correct code is a
-   blocker, not a known issue: a false positive is how a linter gets
-   uninstalled permanently. Record what you ran it against in the release
-   notes.
+   Read every finding, not the count; they are written to
+   `corpus/checkouts/.<repo>.findings`. Anything the rules got wrong about
+   correct code is a blocker, not a known issue: a false positive is how a
+   linter gets uninstalled permanently.
+
+   Compare against the per-rule table in [docs/corpus-run.md](docs/corpus-run.md)
+   and update it in the same release. A count that moved without a rule
+   changing means a pin moved, and that needs reading before it needs
+   recording.
 
 3. **Tag it.** Annotated, on `main`, never moved once pushed.
 

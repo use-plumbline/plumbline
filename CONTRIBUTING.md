@@ -60,6 +60,10 @@ against [docs.rs/soroban-sdk](https://docs.rs/soroban-sdk) or the
 [Stellar docs](https://developers.stellar.org/docs/build/smart-contracts), and
 say in a comment what you checked and when.
 
+What this looks like when it goes wrong is written up in
+[docs/corpus-run.md](docs/corpus-run.md): four classes of false positive that
+real contracts exposed, each now pinned by a fixture.
+
 This matters more than it sounds. `missing-auth` does not treat `extend_ttl` as
 a state mutation, because any account can extend any entry's TTL with
 `ExtendFootprintTTLOp` without the contract's involvement. That is the kind of
