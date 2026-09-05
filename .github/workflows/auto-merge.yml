@@ -1,0 +1,235 @@
+name: auto-merge
+
+# Plumbline's output is an assertion about someone else's contract. A rule that
+# fires wrongly teaches people to ignore the tool, and a tool people ignore
+# protects nothing; a rule that stays quiet when it should not is worse, since a
+# clean run reads as reassurance. So auto-merge is deliberately narrow: it lands
+# the changes it can verify mechanically and routes everything else to a human.
+#
+# SECURITY NOTE: this runs on pull_request_target and workflow_run. Both carry a
+# write token and both run the BASE branch's workflow definition, including for
+# pull requests from forks. It therefore never checks out or executes pull
+# request code — it only inspects metadata through the API.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled, edited]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  pull_request_review:
+    types: [submitted, dismissed]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+# No concurrency group on purpose. The final evaluation is usually the
+# workflow_run that fires when CI finishes, and an in-flight
+# pull_request_target run cancelling it would leave a green, ready pull request
+# sitting unmerged until something else nudged it.
+
+jobs:
+  gate:
+    # This job's name is matched literally below to exclude it from the
+    # pending-check count. If you rename it, rename SELF_CHECK too.
+    name: check the merge gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Evaluate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SELF_CHECK: check the merge gates
+          EVENT: ${{ github.event_name }}
+          PR_FROM_PR: ${{ github.event.pull_request.number }}
+          PR_FROM_ISSUE: ${{ github.event.issue.number }}
+          PR_FROM_RUN: ${{ github.event.workflow_run.pull_requests[0].number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # ---------------------------------------------------------------
+          # Which pull request are we looking at?
+          # ---------------------------------------------------------------
+          PR="${PR_FROM_PR:-}"
+          [ -z "$PR" ] && PR="${PR_FROM_ISSUE:-}"
+          [ -z "$PR" ] && PR="${PR_FROM_RUN:-}"
+
+          # workflow_run does not populate pull_requests for fork branches, so
+          # fall back to finding the open pull request at that head sha.
+          if [ -z "$PR" ] && [ "$EVENT" = "workflow_run" ]; then
+            head='${{ github.event.workflow_run.head_sha }}'
+            PR=$(gh api "repos/$REPO/commits/$head/pulls" \
+                   --jq '[.[] | select(.state == "open")] | first | .number // ""' 2>/dev/null || true)
+          fi
+
+          if [ -z "$PR" ]; then
+            echo "no pull request associated with this event; nothing to do"
+            exit 0
+          fi
+          echo "evaluating pull request #$PR"
+
+          pr_json=$(gh api "repos/$REPO/pulls/$PR")
+          state=$(jq -r '.state' <<<"$pr_json")
+          draft=$(jq -r '.draft' <<<"$pr_json")
+          head_sha=$(jq -r '.head.sha' <<<"$pr_json")
+          body=$(jq -r '.body // ""' <<<"$pr_json")
+          author=$(jq -r '.user.login' <<<"$pr_json")
+
+          if [ "$state" != "open" ]; then echo "not open; nothing to do"; exit 0; fi
+          if [ "$draft" = "true" ]; then echo "draft; nothing to do"; exit 0; fi
+
+          reasons=()
+
+          # ---------------------------------------------------------------
+          # Gate 1 — no maintainer-owned path touched
+          #
+          # Blast radius, not gatekeeping. A mistake in one rule is one wrong
+          # finding. A mistake in the engine, the parser boundary or the config
+          # schema is silently wrong findings across every rule and every user
+          # at once. rules/ and testdata/ are deliberately NOT here: a
+          # self-contained rule with its two fixtures is exactly the change
+          # this gate exists to land without ceremony.
+          #
+          # Kept in sync by hand with CONTRIBUTING.md's "Maintainer-owned
+          # areas" and with the pull request template's first checkbox.
+          # ---------------------------------------------------------------
+          files=$(gh api --paginate "repos/$REPO/pulls/$PR/files" --jq '.[].filename')
+          protected='^(internal/rule/|internal/engine/|internal/config/|internal/syntax/|action/|action\.yml$|\.github/workflows/|\.golangci\.yml$|Makefile$)'
+          hits=$(grep -E "$protected" <<<"$files" || true)
+          if [ -n "$hits" ]; then
+            reasons+=("maintainer-owned paths touched: $(tr '\n' ' ' <<<"$hits")")
+          fi
+
+          # ---------------------------------------------------------------
+          # Gate 2 — no new dependency
+          #
+          # Plumbline has four dependencies and each was argued for. Adding one
+          # is a supply-chain decision for a tool that runs inside other
+          # people's CI, so it is never automatic.
+          # ---------------------------------------------------------------
+          if grep -qE '^go\.(mod|sum)$' <<<"$files"; then
+            reasons+=("go.mod or go.sum changed, which needs a human to weigh the dependency")
+          fi
+
+          # ---------------------------------------------------------------
+          # Gate 3 — the contributor checklist is actually ticked
+          # ---------------------------------------------------------------
+          total_boxes=$(grep -cE '^[[:space:]]*- \[[ xX]\]' <<<"$body" || true)
+          unticked=$(grep -cE '^[[:space:]]*- \[ \]' <<<"$body" || true)
+          if [ "${total_boxes:-0}" -eq 0 ]; then
+            reasons+=("the pull request body has no checklist; it was probably not written against the template")
+          elif [ "${unticked:-0}" -gt 0 ]; then
+            reasons+=("$unticked checklist item(s) not ticked")
+          fi
+
+          # ---------------------------------------------------------------
+          # Gate 4 — every other check has finished and passed
+          #
+          # This job's own check run is excluded. It is necessarily in_progress
+          # while it evaluates, so counting it would make the gate wait for
+          # itself forever: every run would report "1 check still running" and
+          # exit, and nothing would ever merge.
+          # ---------------------------------------------------------------
+          all_runs=$(gh api --paginate "repos/$REPO/commits/$head_sha/check-runs" \
+                       --jq '.check_runs[] | "\(.name)\t\(.status)\t\(.conclusion // "-")"' \
+                     2>/dev/null || true)
+          # The exclusion is done here, in plain awk, rather than inside the jq
+          # filter, so that it stays visible to anyone reading the gate and
+          # needs no jq --arg plumbing to get a shell variable across.
+          runs=$(awk -F'\t' -v self="$SELF_CHECK" '$1 != self' <<<"$all_runs" || true)
+
+          if [ -z "$runs" ]; then
+            reasons+=("no check runs reported yet for $head_sha")
+          else
+            pending=$(awk -F'\t' '$2 != "completed"' <<<"$runs" || true)
+            failed=$(awk -F'\t' '$2 == "completed" && $3 != "success" && $3 != "neutral" && $3 != "skipped"' <<<"$runs" || true)
+            if [ -n "$pending" ]; then
+              reasons+=("$(wc -l <<<"$pending" | tr -d ' ') check(s) still running: $(cut -f1 <<<"$pending" | tr '\n' ' ')")
+            fi
+            if [ -n "$failed" ]; then
+              reasons+=("failing check(s): $(cut -f1 <<<"$failed" | tr '\n' ' ')")
+            fi
+          fi
+
+          # ---------------------------------------------------------------
+          # Gate 5 — no outstanding request for changes
+          # ---------------------------------------------------------------
+          changes_requested=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
+            --jq '[.[] | select(.state == "CHANGES_REQUESTED" or .state == "APPROVED")]
+                  | group_by(.user.login) | map(last)
+                  | map(select(.state == "CHANGES_REQUESTED")) | length' 2>/dev/null || echo 0)
+          if [ "${changes_requested:-0}" -gt 0 ]; then
+            reasons+=("$changes_requested reviewer(s) have changes requested outstanding")
+          fi
+
+          # ---------------------------------------------------------------
+          # Gate 6 — CodeRabbit's verdict, when there is one
+          #
+          # Gate on the verdict, not on the presence of a comment. CodeRabbit
+          # is not installed on this repository today, so silence means "not
+          # applicable" and does not hold. But a review that exists and cannot
+          # be parsed DOES hold: an unreadable verdict is not a clean one.
+          # ---------------------------------------------------------------
+          rabbit=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews" \
+            --jq '[.[] | select(((.user | type) == "object")
+                  and ((.user.login // "") | test("coderabbit"; "i")))]
+                  | last | .body // ""' 2>/dev/null || true)
+          if [ -z "$rabbit" ]; then
+            rabbit=$(gh api --paginate "repos/$REPO/issues/$PR/comments" \
+              --jq '[.[] | select(((.user | type) == "object")
+                    and ((.user.login // "") | test("coderabbit"; "i")))]
+                    | last | .body // ""' 2>/dev/null || true)
+          fi
+
+          if [ -z "$rabbit" ]; then
+            echo "coderabbit: no review on this pull request; not applicable"
+          else
+            actionable=$(grep -oiE 'actionable comments posted:[[:space:]]*[0-9]+' <<<"$rabbit" \
+                         | grep -oE '[0-9]+' | head -1 || true)
+            if [ -z "$actionable" ] && grep -qi 'no actionable comments' <<<"$rabbit"; then
+              actionable=0
+            fi
+            if [ -z "$actionable" ]; then
+              reasons+=("CodeRabbit reviewed but its verdict could not be parsed, so it is not known to be clean")
+            elif [ "$actionable" -gt 0 ]; then
+              reasons+=("CodeRabbit raised $actionable actionable comment(s)")
+            else
+              echo "coderabbit: clean (0 actionable comments)"
+            fi
+          fi
+
+          # ---------------------------------------------------------------
+          # Verdict
+          # ---------------------------------------------------------------
+          if [ ${#reasons[@]} -gt 0 ]; then
+            echo
+            echo "HOLD — pull request #$PR is not auto-mergeable:"
+            printf '  - %s\n' "${reasons[@]}"
+            echo
+            echo "This is a normal outcome. A maintainer reviews and merges."
+            exit 0
+          fi
+
+          echo
+          echo "MERGE — pull request #$PR by @$author passed every gate."
+
+          # --squash matches this repository's settings: allow_squash_merge is
+          # true and delete_branch_on_merge is false, so --delete-branch is
+          # deliberately absent — it would ask for something the repository is
+          # configured not to do. Checked against the live settings rather than
+          # assumed.
+          #
+          # --auto rather than a direct merge so that the behaviour stays
+          # correct if branch protection or a merge queue is added later; with
+          # neither configured it merges as soon as the requirements are met.
+          if ! gh pr merge "$PR" --repo "$REPO" --squash --auto; then
+            echo "::warning::gh pr merge failed. If this says auto-merge is not enabled," \
+                 "turn on 'Allow auto-merge' in the repository settings."
+            exit 1
+          fi
