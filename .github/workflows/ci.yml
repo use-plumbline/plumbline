@@ -45,6 +45,12 @@ jobs:
       - name: go test -race
         run: go test -race ./...
 
+      # The version is pinned rather than tracking latest so the binary and
+      # .golangci.yml cannot drift apart without someone choosing to. The
+      # config is written against the v2 schema; a v1 binary rejects it
+      # outright, and a newer v2 binary can start enforcing rules nobody in
+      # this repository decided to adopt. Either way the failure would arrive
+      # on an unrelated pull request and look like that author's problem.
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
@@ -90,8 +96,8 @@ jobs:
           fi
           grep -q 'missing-auth' "$RUNNER_TEMP/out.txt"
 
-      - name: Wrapper script must be valid shell
-        run: shellcheck action/run.sh
+      - name: Shell scripts must be valid
+        run: shellcheck action/run.sh corpus/run.sh
 
   contract:
     name: Sample contract
@@ -113,3 +119,43 @@ jobs:
       # from the real soroban-sdk.
       - name: cargo test
         run: cargo test
+
+  # Plumbline's claim is that its rules stay quiet on correct code. The corpus
+  # is where that claim is either true or false, so it is a required check
+  # rather than something a release remembers to do.
+  #
+  # The corpus is pinned by commit in corpus/repos.txt, so the counts are
+  # deterministic and only move when Plumbline moves. A diff against
+  # corpus/baseline.txt therefore means this branch changed what Plumbline says
+  # about 300-odd files of real third-party contracts — which is a thing to
+  # decide on deliberately, not to find out about after a release.
+  #
+  # contractmeta-missing shipped in #27 firing on 96% of the corpus. Nothing in
+  # CI could have told anyone that at the time. This job is that missing check.
+  corpus:
+    name: Corpus
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Lint the pinned corpus
+        run: make corpus-check
+
+      # The four false-positive classes cut before v0.1.0 are pinned by unit
+      # fixtures, which the Go job runs. This is the one that cannot be
+      # expressed as a fixture: it asserts against real repositories that no
+      # finding comes from a path the engine is supposed to skip. Test
+      # scaffolding was 44 of the original 174 findings.
+      - name: No finding may come from skipped test scaffolding
+        run: |
+          if grep -E '/(tests?)/|/tests?\.rs:' corpus/checkouts/.*.findings; then
+            echo "A finding came from a path DiscoverRust is supposed to skip."
+            echo "See docs/corpus-run.md, false-positive class 1."
+            exit 1
+          fi
+          echo "No findings from skipped paths."

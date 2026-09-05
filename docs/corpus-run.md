@@ -343,9 +343,30 @@ grep '\[unchecked-arithmetic\]' corpus/checkouts/.soroban-examples.findings
 grep -E '/(tests?)/|/tests?\.rs:' corpus/checkouts/.*.findings   # expect no output
 ```
 
+### CI holds these numbers to account
+
+The corpus is pinned by commit, so the counts are deterministic: they only move
+when Plumbline moves. [`corpus/baseline.txt`](../corpus/baseline.txt) records
+them, and CI runs `make corpus-check`, which fails on any difference.
+
+That means a change altering what Plumbline says about 300-odd files of real
+contracts cannot land without someone noticing. Had it existed in August,
+`contractmeta-missing`'s 91 findings would have arrived as a red check on
+[PR #27][pr27] rather than as a discovery three weeks later.
+
+Updating the baseline is a normal part of a change that intends to move it:
+
+```sh
+make corpus && cp corpus/checkouts/.summary corpus/baseline.txt
+```
+
+The pull request should then say which rule moved and why, and this document's
+tables updated in the same change.
+
 To advance a pin, change the commit in `corpus/repos.txt`, re-run, read every new
-finding, and update the numbers here. The two must move together: this document
-is only worth something if it matches what the tool actually prints.
+finding, and update both the baseline and the numbers here. They must move
+together: this document is only worth something if it matches what the tool
+actually prints.
 
 [b904e11]: https://github.com/use-plumbline/plumbline/commit/b904e112057d0bd7cffa4323a9c93cd7d6c0ea10
 [pr27]: https://github.com/use-plumbline/plumbline/pull/27

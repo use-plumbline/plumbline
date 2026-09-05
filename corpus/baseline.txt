@@ -1,0 +1,10 @@
+soroban-examples	files	79
+soroban-examples	contractmeta-missing	41
+soroban-examples	missing-auth	9
+soroban-examples	panic-in-contract	57
+soroban-examples	unchecked-arithmetic	29
+stellar-contracts	files	240
+stellar-contracts	contractmeta-missing	50
+stellar-contracts	missing-auth	4
+stellar-contracts	panic-in-contract	17
+stellar-contracts	unchecked-arithmetic	2
