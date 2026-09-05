@@ -141,9 +141,28 @@ func TestJSONOutput(t *testing.T) {
 	if len(doc.Findings) == 0 {
 		t.Fatalf("no findings reported for a fixture that should fail:\n%s", &stdout)
 	}
-	f := doc.Findings[0]
-	if f.Rule != "missing-auth" || f.Severity != "error" || f.Line == 0 || f.Message == "" {
-		t.Errorf("finding is missing information: %+v", f)
+	// The fixture is missing-auth's, but every rule runs over it, and findings
+	// are ordered by position rather than by rule. Searching for the rule under
+	// test keeps this from breaking whenever a new rule happens to report
+	// something earlier in the same file.
+	var f *struct {
+		Rule     string `json:"rule"`
+		Severity string `json:"severity"`
+		File     string `json:"file"`
+		Line     int    `json:"line"`
+		Message  string `json:"message"`
+	}
+	for i := range doc.Findings {
+		if doc.Findings[i].Rule == "missing-auth" {
+			f = &doc.Findings[i]
+			break
+		}
+	}
+	if f == nil {
+		t.Fatalf("no missing-auth finding for a fixture that should fail:\n%s", &stdout)
+	}
+	if f.Severity != "error" || f.Line == 0 || f.Message == "" {
+		t.Errorf("finding is missing information: %+v", *f)
 	}
 	if !strings.HasSuffix(f.File, "fail.rs") {
 		t.Errorf("file is %q, want the path that was linted", f.File)
