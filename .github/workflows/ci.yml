@@ -97,7 +97,19 @@ jobs:
           grep -q 'missing-auth' "$RUNNER_TEMP/out.txt"
 
       - name: Shell scripts must be valid
-        run: shellcheck action/run.sh corpus/run.sh
+        run: |
+          shellcheck action/run.sh corpus/run.sh \
+                     .github/scripts/merge-gate.sh \
+                     .github/scripts/merge-gate.test.sh
+
+      # The merge gate decides whether to merge somebody's code. Finding out
+      # whether it is right by watching what it does to a real branch is the
+      # wrong time to find out, so it is exercised against stubbed GitHub
+      # responses instead. Two of the scenarios cover the deadlock the gate
+      # would otherwise have: its own check run is in_progress while it
+      # evaluates, so counting it would make it wait for itself forever.
+      - name: Merge gate must behave
+        run: .github/scripts/merge-gate.test.sh
 
   contract:
     name: Sample contract

@@ -1,0 +1,1 @@
+[{"filename": "rules/division_by_zero.go"}, {"filename": "testdata/rules/division-by-zero/pass.rs"}, {"filename": "testdata/rules/division-by-zero/fail.rs"}, {"filename": "rules/rules.go"}, {"filename": "go.mod"}, {"filename": "go.sum"}]

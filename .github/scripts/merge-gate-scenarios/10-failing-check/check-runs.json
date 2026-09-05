@@ -1,0 +1,1 @@
+{"check_runs": [{"name": "Go", "status": "completed", "conclusion": "success"}, {"name": "Corpus", "status": "completed", "conclusion": "failure"}]}
