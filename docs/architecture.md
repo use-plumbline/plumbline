@@ -8,11 +8,12 @@ sample contract.
 
 ```
 cmd/plumbline/      CLI: flags, exit codes
-  └── internal/engine/    find files, parse, run rules, collect findings
-        ├── internal/syntax/   the parser, wrapped
-        └── internal/rule/     the Rule interface, Context, registry
-              └── rules/       one file per rule
-  └── internal/report/    render findings as text or GitHub annotations
+  ├── internal/config/    .plumbline.toml — severity, enablement, excludes
+  ├── internal/engine/    find files, parse, run rules, collect findings
+  │     ├── internal/syntax/   the parser, wrapped
+  │     └── internal/rule/     the Rule interface, Context, registry
+  │           └── rules/       one file per rule
+  └── internal/report/    render findings as text, JSON or GitHub annotations
 ```
 
 Dependencies point one way. `rules/` imports `internal/rule` and nothing else
@@ -71,7 +72,12 @@ return zero values instead of panicking, so a rule can chain lookups and check
 `internal/engine` owns everything that can fail, so rules do not have to:
 
 1. **Discovery.** Walk the given paths for `.rs` files, skipping `target/`,
-   `node_modules/` and `.git/`. A path naming a file is taken as given.
+   `node_modules/`, `.git/`, and Rust's test sources — `tests/`, `test/`,
+   `test.rs`, `tests.rs`. The mock contracts in those are written to exercise
+   one path and are never compiled into a deployed wasm, so holding them to the
+   rules reports defects that cannot reach a ledger; they were 44 of the 174
+   findings in the [first corpus run](corpus-run.md). A path naming a file is
+   taken as given, so `plumbline src/test.rs` still does what it says.
 2. **Parse.** One parser, reused across files.
 3. **Check.** Build one `rule.Context` per file and hand it to every enabled
    rule, so parsing happens once regardless of rule count.
@@ -82,20 +88,38 @@ return zero values instead of panicking, so a rule can chain lookups and check
 tree reports nonsense. Skips are recorded in the result and surfaced in output
 rather than swallowed.
 
-### Where configuration will go
+### Configuration
 
-`.plumbline.toml` is not implemented. The seam for it already exists: the engine
-holds severity overrides and a disabled set, both keyed by rule ID, and stamps
-severity onto findings itself.
+`.plumbline.toml` is implemented in [`internal/config`](../internal/config/), and
+it landed through the seam this section used to describe as future work: the
+engine holds severity overrides, a disabled set and a file-exclusion predicate,
+all keyed by rule ID, and stamps severity onto findings itself.
 
 ```go
 e := engine.New(registry)
 e.SetSeverity("unchecked-arithmetic", rule.SeverityError)
 e.Disable("panic-in-contract")
+e.SetExcluded(func(path string) bool { ... })
 ```
 
-A rule's `Meta.Severity` is only a *default*. When config lands it populates
-those maps, and no rule changes.
+The prediction held: **not one rule changed when configuration shipped.** A
+rule's `Meta.Severity` is only a *default*, and no rule has an opinion about
+where its settings came from.
+
+The dependency runs one way — `Config.Apply(*engine.Engine)`, so config knows
+about the engine and the engine knows nothing about config. Two consequences
+worth stating:
+
+- **Configuration cannot change what a rule looks for.** Severity, enablement
+  and file selection are policy and live in `internal/config`. What counts as a
+  finding stays in the rule. That boundary is why adding a config key never
+  needs a rule to be re-reviewed.
+- **An unknown rule ID in `[rules]` is a hard error**, not a silent no-op. A
+  misspelt key would otherwise look exactly like a rule successfully switched
+  off.
+
+User-facing reference: [configuration.md](configuration.md). How the schema is
+extended is [issue #34](https://github.com/use-plumbline/plumbline/issues/34).
 
 ## Severity
 
