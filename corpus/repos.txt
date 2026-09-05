@@ -1,0 +1,22 @@
+# The standing corpus: public Soroban contracts Plumbline is checked against.
+#
+# Pinned by commit, not by branch. A moving corpus makes a finding count
+# unreproducible — the number changes because someone else pushed, and there is
+# no way to tell that from the linter changing. Both revisions below were
+# resolved and cloned on 2026-09-05; stellar-contracts had already moved twice
+# during the session that added this file, which is the argument for pinning.
+#
+# To advance a pin: change the SHA, run `make corpus`, read every new finding,
+# and update the counts in docs/corpus-run.md. Never advance one without the
+# other — the document's numbers are only worth something if they match what
+# the target actually produces.
+#
+# Format: name<space>url<space>commit
+#
+# Not in this list, and unrecoverable: the four private working workspaces the
+# v0.1.0 corpus run also covered. They are unnamed in git history, so that part
+# of the original run cannot be reproduced by anyone, including us. See
+# docs/corpus-run.md.
+
+soroban-examples   https://github.com/stellar/soroban-examples        a1bf52cde6c11dffd870053bccf3d47ee0206e06
+stellar-contracts  https://github.com/OpenZeppelin/stellar-contracts  6ea3075d44de51ea2a0d26fa45cbee6d385731b5

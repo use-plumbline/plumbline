@@ -6,7 +6,7 @@ LDFLAGS := -X main.version=$(VERSION)
 # Paths passed to `make run`, e.g. make run ARGS="--format github testdata"
 ARGS ?= testdata/sample-contract
 
-.PHONY: help build test lint cover run clean
+.PHONY: help build test lint cover run corpus clean
 
 help: ## Show this help
 	@grep -hE '^[a-z-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -32,6 +32,9 @@ cover: ## Report test coverage per function
 
 run: build ## Lint the sample contract (override with ARGS=...)
 	./$(BIN_DIR)/$(BINARY) $(ARGS)
+
+corpus: build ## Lint the pinned third-party corpus and report per-rule counts
+	@./corpus/run.sh
 
 clean: ## Remove build output
 	rm -rf $(BIN_DIR) coverage.out

@@ -19,6 +19,11 @@ target/
 # Ledger snapshots soroban-sdk writes during contract tests
 test_snapshots/
 
+# Corpus checkouts. These are third-party repositories fetched at a pinned
+# commit by `make corpus`; the pins live in corpus/repos.txt, the contents do
+# not belong in this repository.
+/corpus/checkouts/
+
 # Editor / OS
 .DS_Store
 .idea/
