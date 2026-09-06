@@ -15,6 +15,7 @@ import (
 func all() []rule.Rule {
 	return []rule.Rule{
 		ContractmetaMissing{},
+		HardcodedAddressLiteral{},
 		MissingAuth{},
 		PanicInContract{},
 		UncheckedArithmetic{},

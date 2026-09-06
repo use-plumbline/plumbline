@@ -20,9 +20,9 @@ make corpus
 
 ## What was scanned
 
-### This run — 2026-09-05
+### This run — 2026-09-06
 
-Plumbline `v0.1.0-8-g2339be7`, four rules. Corpus pinned by commit in
+Plumbline `v0.1.0-18-g98f2d98`, five rules. Corpus pinned by commit in
 [`corpus/repos.txt`](../corpus/repos.txt).
 
 | Repository | Commit | Files linted | Files declaring `#[contract]` |
@@ -76,6 +76,7 @@ weeks and one upstream commit later.
 | Rule | Severity | soroban-examples | stellar-contracts | Total |
 | --- | --- | --- | --- | --- |
 | `contractmeta-missing` | note | 41 | 50 | **91** |
+| `hardcoded-address-literal` | warning | 0 | 0 | **0** |
 | `missing-auth` | error | 9 | 4 | **13** |
 | `panic-in-contract` | warning | 57 | 17 | **74** |
 | `unchecked-arithmetic` | warning | 29 | 2 | **31** |
