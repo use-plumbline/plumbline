@@ -20,3 +20,4 @@
 
 soroban-examples   https://github.com/stellar/soroban-examples        a1bf52cde6c11dffd870053bccf3d47ee0206e06
 stellar-contracts  https://github.com/OpenZeppelin/stellar-contracts  6ea3075d44de51ea2a0d26fa45cbee6d385731b5
+scout-soroban-examples  https://github.com/CoinFabrik/scout-soroban-examples  d977f976955c2a5f7b6ba5ac25e4cac37c2a4ef8

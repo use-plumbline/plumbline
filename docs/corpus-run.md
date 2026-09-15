@@ -20,16 +20,17 @@ make corpus
 
 ## What was scanned
 
-### This run — 2026-09-05
+### This run — 2026-09-15
 
-Plumbline `v0.1.0-8-g2339be7`, four rules. Corpus pinned by commit in
+Plumbline `v0.1.0-18-g98f2d98-dirty`, five rules. Corpus pinned by commit in
 [`corpus/repos.txt`](../corpus/repos.txt).
 
 | Repository | Commit | Files linted | Files declaring `#[contract]` |
 | --- | --- | --- | --- |
 | [stellar/soroban-examples](https://github.com/stellar/soroban-examples) | `a1bf52cde6c11dffd870053bccf3d47ee0206e06` | 79 | 42 |
 | [OpenZeppelin/stellar-contracts](https://github.com/OpenZeppelin/stellar-contracts) | `6ea3075d44de51ea2a0d26fa45cbee6d385731b5` | 240 | 53 |
-| **Total** | | **319** | **95** |
+| [CoinFabrik/scout-soroban-examples](https://github.com/CoinFabrik/scout-soroban-examples) | `d977f976955c2a5f7b6ba5ac25e4cac37c2a4ef8` | 22 | 13 |
+| **Total** | | **341** | **108** |
 
 "Files linted" is after Plumbline's own exclusions: build output, `tests/`,
 `test/`, `test.rs` and `tests.rs` are skipped, because the mock contracts in
@@ -73,18 +74,19 @@ weeks and one upstream commit later.
 
 ### This run
 
-| Rule | Severity | soroban-examples | stellar-contracts | Total |
-| --- | --- | --- | --- | --- |
-| `contractmeta-missing` | note | 41 | 50 | **91** |
-| `missing-auth` | error | 9 | 4 | **13** |
-| `panic-in-contract` | warning | 57 | 17 | **74** |
-| `unchecked-arithmetic` | warning | 29 | 2 | **31** |
+| Rule | Severity | soroban-examples | stellar-contracts | scout-soroban-examples | Total |
+| --- | --- | --- | --- | --- | --- |
+| `contractmeta-missing` | note | 41 | 50 | 13 | **104** |
+| `missing-auth` | error | 9 | 4 | 10 | **23** |
+| `missing-reinit-guard` | warning | 1 | 0 | 3 | **4** |
+| `panic-in-contract` | warning | 57 | 17 | 11 | **85** |
+| `unchecked-arithmetic` | warning | 29 | 2 | 24 | **55** |
 
-### `missing-auth` — 13 findings, all 13 read
+### `missing-auth` — 23 findings, all 23 read
 
 | | |
 | --- | --- |
-| True positive | 12 |
+| True positive | 22 |
 | Rule cannot decide | 1 |
 | False positive | 0 |
 
@@ -117,11 +119,44 @@ controls that identity, so whether it is sufficient authorization is a question
 about the contract's threat model, not one a syntactic linter can answer. It is
 reported, and this is the documented limit rather than a bug to be silenced.
 
-### `unchecked-arithmetic` — 31 findings, all 31 read
+### `missing-reinit-guard` — 4 findings, all 4 read
 
 | | |
 | --- | --- |
-| True positive | 30 |
+| True positive | 4 |
+| False positive | 0 |
+
+This rule was reverted in PR #30 after shipping with a false-positive trigger
+(`writesPrivilegedKey`) that matched any function writing to Admin/Owner/Config
+storage — including legitimate setters like `set_admin`. The fix: remove the
+`writesPrivilegedKey` heuristic entirely and fire only on functions whose name
+suggests they run once (`initialize`, `init`, `setup`). The rule also recognizes
+three guard patterns: `has(&key)`, `get(&key).is_some()`, and the negated
+`!get(&key).is_none()`.
+
+The four findings:
+
+- `soroban-examples/ttl/src/lib.rs:18` — `setup()` writes to persistent,
+  instance, and temporary storage with no guard. A teaching example for TTL
+  extension, but the rule correctly flags it.
+- `scout-soroban-examples/governance/mock-contract/src/lib.rs:19` —
+  `initialize()` writes to instance storage with no guard. True positive.
+- `scout-soroban-examples/governance/governance/src/lib.rs:70` —
+  `initialize()` uses `Self::get_state()` as its guard, which Plumbline cannot
+  see through. True positive; the guard is not a standard `has/get` pattern.
+- `scout-soroban-examples/payment-channel/src/lib.rs:42` — same pattern as
+  governance: `Self::get_state()` guard, not a standard pattern. True positive.
+
+The documented blind spot: functions guarded by custom helpers
+(`Self::get_state()`) are not recognized. This is the same kind of limitation
+as `missing-auth`'s Merkle-proof case — a syntactic linter cannot follow
+arbitrary helper functions.
+
+### `unchecked-arithmetic` — 55 findings, all 55 read
+
+| | |
+| --- | --- |
+| True positive | 54 |
 | False positive | 1 |
 
 Twenty-five of the thirty are in `soroban-examples/liquidity_pool` — reserve and
@@ -145,7 +180,7 @@ session 3 chose to keep reporting unresolvable operands because narrowing to
 still a false positive, it is counted as one here, and closing it needs
 return-type inference the rule does not have. Tracked rather than hidden.
 
-### `panic-in-contract` — 74 findings, sampled
+### `panic-in-contract` — 85 findings, sampled
 
 Every finding is a literal `panic!`, `.unwrap()` or `.expect()` inside a contract
 entry point, which is what the rule says it reports. **These were reviewed by
@@ -155,20 +190,20 @@ none of the 74 comes from a path Plumbline is supposed to skip: no finding in an
 `tests/`, `test/`, `test.rs` or `tests.rs`, confirming the test-scaffolding fix
 still holds on a corpus three weeks newer than the one it was written against.
 
-### `contractmeta-missing` — 91 findings, and a problem
+### `contractmeta-missing` — 104 findings, and a problem
 
 This rule was added by [PR #27][pr27] after the v0.1.0 corpus run, so this is the
 first time it has met third-party code. The result:
 
-| | soroban-examples | stellar-contracts | Total |
-| --- | --- | --- | --- |
-| Files declaring `#[contract]` | 42 | 53 | 95 |
-| Findings | 41 | 50 | 91 |
-| **Hit rate** | **97.6%** | **94.3%** | **95.8%** |
+| | soroban-examples | stellar-contracts | scout-soroban-examples | Total |
+| --- | --- | --- | --- | --- |
+| Files declaring `#[contract]` | 42 | 53 | 13 | 108 |
+| Findings | 41 | 50 | 13 | 104 |
+| **Hit rate** | **97.6%** | **94.3%** | **100%** | **96.3%** |
 
-Exactly one file in 319 uses `contractmeta!` —
-`soroban-examples/liquidity_pool/src/lib.rs`. Every other contract in both of
-the ecosystem's reference repositories would be annotated.
+Exactly one file across all 341 uses `contractmeta!` —
+`soroban-examples/liquidity_pool/src/lib.rs`. Every other contract in all three
+ecosystem repositories would be annotated.
 
 Each finding is factually correct: the metadata really is absent. So this is not
 a false positive in the sense the four below are — the rule is not wrong about
@@ -293,12 +328,12 @@ workspaces (66 files, 0 errors, 7 warnings) are unnamed in git history. Nobody
 can reproduce that row. Whatever those contracts exercised that the two public
 repositories do not is no longer covered.
 
-**The corpus is small and narrow.** 319 files, 95 contracts, two repositories,
-both of them reference material written to be exemplary. Reference contracts are
-not production contracts: they are shorter, better commented, and written by
-people who know the SDK well. A rule that is quiet here is not proven quiet on a
-real DeFi codebase — it is proven quiet on the friendliest sample available.
-Expanding the corpus is [issue #32](https://github.com/use-plumbline/plumbline/issues/32).
+**The corpus is still narrow.** 341 files, 108 contracts, three repositories.
+`scout-soroban-examples` added real-world patterns (payment channels, governance,
+vesting, multisig, AMM) but the corpus remains reference-heavy. A rule that is
+quiet here is not proven quiet on a large DeFi codebase — it is proven quiet on
+the friendliest samples available. Expanding the corpus further is
+[issue #32](https://github.com/use-plumbline/plumbline/issues/32).
 
 **`panic-in-contract`'s 74 findings were not individually classified.** Only the
 sample and the path-exclusion check were done, so no accuracy claim is made for
