@@ -183,7 +183,7 @@ func TestListRulesAndExplain(t *testing.T) {
 		t.Fatalf("exit %d: %s", got, &stderr)
 	}
 	listing := stdout.String()
-	for _, id := range []string{"missing-auth", "panic-in-contract", "unchecked-arithmetic"} {
+	for _, id := range []string{"missing-auth", "missing-reinit-guard", "panic-in-contract", "unchecked-arithmetic"} {
 		if !strings.Contains(listing, id) {
 			t.Errorf("--list-rules omits %q:\n%s", id, listing)
 		}

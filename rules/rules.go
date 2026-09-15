@@ -16,6 +16,7 @@ func all() []rule.Rule {
 	return []rule.Rule{
 		ContractmetaMissing{},
 		MissingAuth{},
+		MissingReinitGuard{},
 		PanicInContract{},
 		UncheckedArithmetic{},
 	}
