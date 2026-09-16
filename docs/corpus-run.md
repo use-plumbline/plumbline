@@ -20,9 +20,9 @@ make corpus
 
 ## What was scanned
 
-### This run — 2026-09-15
+### This run — 2026-09-16
 
-Plumbline `v0.1.0-18-g98f2d98-dirty`, five rules. Corpus pinned by commit in
+Plumbline `v0.1.0-24-g4490cf5`, six rules. Corpus pinned by commit in
 [`corpus/repos.txt`](../corpus/repos.txt).
 
 | Repository | Commit | Files linted | Files declaring `#[contract]` |
@@ -58,7 +58,7 @@ so that row cannot be reproduced by anyone, including us.
 
 The two public repositories were re-linted at current revisions:
 
-| | 2026-08-15 | 2026-09-05 | |
+| | 2026-08-15 | re-checked 2026-09-05 | |
 | --- | --- | --- | --- |
 | soroban-examples | 78 files, 9 errors, 85 warnings | 79 files, 9 errors, 86 warnings | one file added upstream, carrying one warning |
 | stellar-contracts | 240 files, 4 errors, 19 warnings | 240 files, 4 errors, 19 warnings | identical |
@@ -78,7 +78,8 @@ weeks and one upstream commit later.
 | --- | --- | --- | --- | --- | --- |
 | `contractmeta-missing` | note | 41 | 50 | 13 | **104** |
 | `missing-auth` | error | 9 | 4 | 10 | **23** |
-| `missing-reinit-guard` | warning | 1 | 0 | 3 | **4** |
+| `missing-reinit-guard` | warning | 1 | 0 | 1 | **2** |
+| `missing-ttl-extension` | warning | 7 | 3 | 1 | **11** |
 | `panic-in-contract` | warning | 57 | 17 | 11 | **85** |
 | `unchecked-arithmetic` | warning | 29 | 2 | 24 | **55** |
 
@@ -110,6 +111,39 @@ Three would matter in production, and are worth naming:
 - `soroban-examples/pause/src/lib.rs` — `set(paused)` lets any caller pause the
   contract.
 
+The remaining ten are in `scout-soroban-examples`, and they are the most
+interesting, because that repository ships an independent check on this rule's
+work.
+
+**An auditor found the same things.** `scout-soroban-examples` includes
+[a security review](../corpus/checkouts/scout-soroban-examples/security-review/README.md)
+written by one of CoinFabrik's senior auditors against contracts deliberately
+written by developers new to Soroban. Two of its issues are missing
+authorization, and Plumbline reports both without having been told:
+
+| Audit issue | Auditor's finding | Plumbline |
+| --- | --- | --- |
+| **IS-10** | "No authorization has been implemented in any of the contracts in the `multi-contract-caller` directory… any value can be written by any actor in any instance of the storage contract" | Reports `caller/init`, `caller/flip`, and `storage/set` — the last being the auditor's sentence, exactly |
+| **IS-12** | "Any account can cast a vote on behalf of any other account because the `vote_proposal` function has no authentication" | **No `missing-auth` finding** — and correctly so |
+
+IS-12 is the useful half. It is marked **Resolved**: at the commit this corpus
+pins, `vote_proposal` calls `voter.require_auth()` on line 160. The same rule
+that reports the contracts the auditor flagged stays quiet on the one that was
+fixed. (`unchecked-arithmetic` does report two vote counters in that function —
+a different rule answering a different question.) That is a negative control the corpus supplied for free, and it is
+worth more than another true positive.
+
+IS-10, for the record, the team **rejected** — `multi-contract-caller` is
+"purposely a simple contract, meant to demonstrate a variable interface." The
+finding was real; they decided the contract's purpose did not warrant fixing
+it. Plumbline reports it, the auditor reported it, and a reader is entitled to
+reach the same conclusion the team did. A linter's job is to put it in front of
+them, not to decide.
+
+The other scout findings — `governance/initialize`, `governance/propose_tx`,
+`mock-contract/initialize`, `multisig` (×2), `amm`, `vesting` — are entry
+points that write storage with no `require_auth` on any path.
+
 **The one the rule cannot decide:**
 `stellar-contracts/examples/merkle-voting/src/contract.rs` — `vote` is gated by
 `Distributor::verify_and_set_claimed(e, vote_data, proof)`, a Merkle-proof check
@@ -119,38 +153,127 @@ controls that identity, so whether it is sufficient authorization is a question
 about the contract's threat model, not one a syntactic linter can answer. It is
 reported, and this is the documented limit rather than a bug to be silenced.
 
-### `missing-reinit-guard` — 4 findings, all 4 read
+### `missing-reinit-guard` — 2 findings, all 2 read
 
 | | |
 | --- | --- |
-| True positive | 4 |
+| True positive | 2 |
 | False positive | 0 |
 
-This rule was reverted in PR #30 after shipping with a false-positive trigger
-(`writesPrivilegedKey`) that matched any function writing to Admin/Owner/Config
-storage — including legitimate setters like `set_admin`. The fix: remove the
-`writesPrivilegedKey` heuristic entirely and fire only on functions whose name
-suggests they run once (`initialize`, `init`, `setup`). The rule also recognizes
-three guard patterns: `has(&key)`, `get(&key).is_some()`, and the negated
-`!get(&key).is_none()`.
+This rule has been wrong twice and is the most instructive thing in this
+document, so both times are recorded.
 
-The four findings:
+**The first time — shipped, reverted.** PR #28 added it with a
+`writesPrivilegedKey` heuristic that fired on any function writing a storage
+key whose *source text* contained "Admin", "Owner" or "Config". That is a
+substring match on an enum variant, not evidence of an initializer, so a
+perfectly ordinary `set_admin` was reported as an unguarded initializer — when
+an admin transfer is *supposed* to be callable more than once. It was reverted
+in PR #30.
 
-- `soroban-examples/ttl/src/lib.rs:18` — `setup()` writes to persistent,
-  instance, and temporary storage with no guard. A teaching example for TTL
-  extension, but the rule correctly flags it.
+It fired on Plumbline's own [`testdata/sample-contract`](../testdata/sample-contract/src/lib.rs),
+whose `set_admin` is an authorized admin handover. CI has a job that requires
+zero findings on that contract, which is exactly the check designed to catch
+this — but CI was red at the time for an unrelated reason
+(`TestJSONOutput`, fixed in `0f24bca`), so the signal was lost in the noise. A
+red build does not just fail to tell you about the new thing; it hides the new
+thing.
+
+The rule was re-added with the heuristic deleted: it fires only on functions
+*named* like an initializer (`initialize`, `init`, `setup`). `set_admin`,
+`set_owner` and `update_config` are pinned in
+[`pass.rs`](../testdata/rules/missing-reinit-guard/pass.rs), and the reverted
+implementation reports three findings on that fixture — which is what makes it
+a regression test rather than a comment.
+
+**The second time — caught by this corpus run.** Of the four findings the
+re-added rule produced, two were false positives, and an earlier version of
+this document called all four true. Both `governance` and `payment-channel` in
+`scout-soroban-examples` guard their initializers like this:
+
+```rust
+let state = Self::get_state(env.clone());
+if state.is_ok() {
+    return Err(GovError::GovernanceAlreadyInitialized);
+}
+```
+
+`get_state` reads instance storage and maps absence to `Err`, so `is_ok()` asks
+exactly what `get(&k).is_some()` asks. Those contracts are protected. The rule
+could not see through the helper and reported them anyway.
+
+**An independent auditor says the same.** `scout-soroban-examples` ships
+[a security review](../corpus/checkouts/scout-soroban-examples/security-review/README.md)
+by one of CoinFabrik's senior auditors. It files unrestricted `initialize` as
+**IS-17** and records its status as **Resolved**. Plumbline was contradicting a
+professional audit that had already been satisfied — and the corpus contained
+the evidence.
+
+Fixed by taking one hop through a same-file helper, recognising `is_ok`
+alongside `is_some`, and resolving a `let`-bound receiver. One frame, no
+recursion: a guard needing two hops to reach its storage read is far enough
+from the idiom that a human should look at it.
+
+There is a lesson in *how* that fix went. The first attempt handled only the
+inlined form, `if Self::get_state(&env).is_ok()`, and the fixture written
+alongside it used that shape — so the fixture passed while both real contracts
+still reported. The corpus caught a fixture that did not represent the code it
+was standing in for. Both shapes are pinned now.
+
+The two survivors are genuine:
+
+- `soroban-examples/ttl/src/lib.rs:18` — `setup()` writes persistent, instance
+  and temporary storage with no guard of any kind.
 - `scout-soroban-examples/governance/mock-contract/src/lib.rs:19` —
-  `initialize()` writes to instance storage with no guard. True positive.
-- `scout-soroban-examples/governance/governance/src/lib.rs:70` —
-  `initialize()` uses `Self::get_state()` as its guard, which Plumbline cannot
-  see through. True positive; the guard is not a standard `has/get` pattern.
-- `scout-soroban-examples/payment-channel/src/lib.rs:42` — same pattern as
-  governance: `Self::get_state()` guard, not a standard pattern. True positive.
+  `initialize()` writes instance storage unguarded. Anyone can re-run it and
+  replace `governance_auth`, which `increase_counter` then requires
+  authorization from. That is a privilege takeover, not a style problem.
 
-The documented blind spot: functions guarded by custom helpers
-(`Self::get_state()`) are not recognized. This is the same kind of limitation
-as `missing-auth`'s Merkle-proof case — a syntactic linter cannot follow
-arbitrary helper functions.
+Still not recognised: a guard whose storage read is two or more helper hops
+away, or one in another module. Single-file analysis is the boundary, and this
+is where it sits.
+
+### `missing-ttl-extension` — 11 findings, all 11 read
+
+| | |
+| --- | --- |
+| True positive | 11 |
+| False positive | 0 |
+
+**This rule came out of reading the corpus rather than out of a list of ideas**,
+which is the only reason it is here. Eleven files across the three repositories
+write persistent storage and never extend a TTL; for ten of them there is no
+`extend_ttl` anywhere in the entire crate.
+
+Persistent entries are rented. The SDK is explicit about what happens when the
+rent runs out — an expired entry *"can be restored and cannot be recreated"* —
+so the contract cannot simply write the key again. Until somebody pays to
+restore it, every read of that key fails, on a contract that passed every test
+it had.
+
+The one worth naming is `soroban-examples/mint-lock`, because it is what
+decided the rule's shape. It *does* call `extend_ttl` — on `temporary()`
+storage, while its `Minter` config goes to `persistent()`. A check asking "does
+this file mention `extend_ttl`" passes it. Requiring the extension to be on a
+persistent receiver is what catches it.
+
+Two scoping decisions, both argued by
+[`pass.rs`](../testdata/rules/missing-ttl-extension/pass.rs):
+
+- **The whole file is searched for the extension, not the writing function.**
+  The idiomatic shape puts the write and the extension together in a helper
+  that entry points call — `write_balance` in Plumbline's own sample contract
+  is exactly that, and a function-scoped search would report the contract this
+  project ships as its example of good Soroban.
+- **Only files with contract entry points are considered.** A library module
+  that writes persistent storage on a caller's behalf is not where the TTL
+  decision belongs. Without that scope, `stellar-contracts`' `contract-utils`
+  package is reported for an extension its own crate performs elsewhere — the
+  single case in the corpus where single-file analysis would have been wrong,
+  removed by scoping rather than documented as a limitation.
+
+One finding per file: the absent extension is a property of the contract, not
+of each write.
 
 ### `unchecked-arithmetic` — 55 findings, all 55 read
 
@@ -159,7 +282,7 @@ arbitrary helper functions.
 | True positive | 54 |
 | False positive | 1 |
 
-Twenty-five of the thirty are in `soroban-examples/liquidity_pool` — reserve and
+Twenty-five of the fifty-four are in `soroban-examples/liquidity_pool` — reserve and
 share arithmetic on `i128`, which is exactly the arithmetic the rule exists for.
 The rest are token amounts in `fuzzing`, `mint-lock` and `merkle-voting`.
 `eth_abi` is a true positive of a different shape: `input.b + input.c` on
@@ -186,7 +309,7 @@ Every finding is a literal `panic!`, `.unwrap()` or `.expect()` inside a contrac
 entry point, which is what the rule says it reports. **These were reviewed by
 file distribution and by reading a sample, not classified one by one**, so no
 true/false split is claimed for this rule. What was checked exhaustively is that
-none of the 74 comes from a path Plumbline is supposed to skip: no finding in any
+none of the 85 comes from a path Plumbline is supposed to skip: no finding in any
 `tests/`, `test/`, `test.rs` or `tests.rs`, confirming the test-scaffolding fix
 still holds on a corpus three weeks newer than the one it was written against.
 
@@ -335,9 +458,15 @@ quiet here is not proven quiet on a large DeFi codebase — it is proven quiet o
 the friendliest samples available. Expanding the corpus further is
 [issue #32](https://github.com/use-plumbline/plumbline/issues/32).
 
-**`panic-in-contract`'s 74 findings were not individually classified.** Only the
+**`panic-in-contract`'s 85 findings were not individually classified.** Only the
 sample and the path-exclusion check were done, so no accuracy claim is made for
 that rule beyond "it reported what it says it reports."
+
+**Helper-following is one frame deep.** `missing-auth` follows same-file calls
+up to four frames; `missing-reinit-guard` follows one. A guard or an
+authorization check whose storage read sits two or more hops away, or in
+another module, is not seen. Both rules have been wrong in exactly this way
+before, and both times the corpus is what found it.
 
 **The analysis is syntactic and single-file.** Plumbline sees names and shapes,
 not resolved types, and reads one file at a time. `alloc/sum` above is a false
@@ -386,7 +515,7 @@ them, and CI runs `make corpus-check`, which fails on any difference.
 
 That means a change altering what Plumbline says about 300-odd files of real
 contracts cannot land without someone noticing. Had it existed in August,
-`contractmeta-missing`'s 91 findings would have arrived as a red check on
+`contractmeta-missing`'s 104 findings would have arrived as a red check on
 [PR #27][pr27] rather than as a discovery three weeks later.
 
 Updating the baseline is a normal part of a change that intends to move it:
