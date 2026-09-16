@@ -51,6 +51,43 @@ impl Vault {
         env.storage().instance().set(&DataKey::Config, &value);
     }
 
+    /// The guard is a helper returning Result: Ok when the key is present,
+    /// Err when it is not, so `is_ok()` asks exactly what `get().is_some()`
+    /// asks. Both governance and payment-channel in scout-soroban-examples
+    /// guard their initializers this way, and CoinFabrik's review of that
+    /// codebase records the matching issue (IS-17) as resolved. Reporting it
+    /// would be contradicting an audit that had already been satisfied.
+    /// Written the way the corpus writes it: the helper's result is bound to
+    /// a local first, so the condition's receiver is an identifier rather
+    /// than the call. An earlier version of this fixture inlined the call and
+    /// passed while the real contracts still reported — the shape matters.
+    pub fn init_via_helper(env: Env, admin: Address) -> Result<(), Error> {
+        let state = Self::get_state(&env);
+        if state.is_ok() {
+            return Err(Error::AlreadyInitialized);
+        }
+        env.storage().instance().set(&DataKey::Admin, &admin);
+        Ok(())
+    }
+
+    /// The same guard written inline, which must also pass.
+    pub fn init_inline_helper(env: Env, owner: Address) -> Result<(), Error> {
+        if Self::get_state(&env).is_ok() {
+            return Err(Error::AlreadyInitialized);
+        }
+        env.storage().instance().set(&DataKey::Owner, &owner);
+        Ok(())
+    }
+
+    /// The helper the guard above calls. It reads storage and maps absence to
+    /// an error, which is what makes the guard meaningful.
+    pub fn get_state(env: &Env) -> Result<Address, Error> {
+        match env.storage().instance().get(&DataKey::Admin) {
+            Some(admin) => Ok(admin),
+            None => Err(Error::NotInitialized),
+        }
+    }
+
     /// set_admin writes to Admin but is NOT an initializer — it is a
     /// legitimate setter called repeatedly by the admin. This is the exact
     /// false positive that caused the revert of PR #28. The rule must not

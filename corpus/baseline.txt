@@ -15,7 +15,7 @@ stellar-contracts	unchecked-arithmetic	2
 scout-soroban-examples	files	22
 scout-soroban-examples	contractmeta-missing	13
 scout-soroban-examples	missing-auth	10
-scout-soroban-examples	missing-reinit-guard	3
+scout-soroban-examples	missing-reinit-guard	1
 scout-soroban-examples	missing-ttl-extension	1
 scout-soroban-examples	panic-in-contract	11
 scout-soroban-examples	unchecked-arithmetic	24
