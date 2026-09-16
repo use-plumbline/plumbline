@@ -66,6 +66,6 @@ func TestTreeSitterConfined(t *testing.T) {
 				t.Errorf("tree-sitter imported outside internal/syntax: %s", path)
 			}
 		}
-		f.Close()
+		_ = f.Close()
 	}
 }
