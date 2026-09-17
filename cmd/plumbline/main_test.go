@@ -59,19 +59,17 @@ func writeConfig(t *testing.T, content string) string {
 // see. Each case here is one of the reasons a team reaches for a config file
 // at all: turn a rule down, turn it off, or keep Plumbline out of a directory.
 func TestConfigChangesTheRun(t *testing.T) {
-	const dirty = "../../testdata/rules/missing-auth/fail.rs"
-
+	const dirty = "../../testdata/cmd/missing-auth-config/dirty.rs"
 	tests := []struct {
 		name   string
 		config string
 		want   int
 	}{
-		// missing-auth is an error by default, and errors fail the run.
 		{"no config keeps the defaults", "", exitFindings},
-		{"severity lowered below the threshold", "[rules]\nmissing-auth = \"warning\"\n", exitClean},
-		{"severity raised is still a failure", "[rules]\nmissing-auth = \"error\"\n", exitFindings},
-		{"rule switched off", "[rules]\nmissing-auth = \"off\"\n", exitClean},
-		{"path excluded", "exclude = [\"**/missing-auth/**\"]\n", exitClean},
+		{"severity lowered below the threshold", "[rules]\nmissing-auth = \"warning\"\nmissing-reinit-guard = \"off\"\n", exitClean},
+		{"severity raised is still a failure", "[rules]\nmissing-auth = \"error\"\nmissing-reinit-guard = \"off\"\n", exitFindings},
+		{"rule switched off", "[rules]\nmissing-auth = \"off\"\nmissing-reinit-guard = \"off\"\n", exitClean},
+		{"path excluded", "exclude = [\"**/missing-auth-config/**\"]\n", exitClean},
 		{"a different path excluded changes nothing", "exclude = [\"**/panic-in-contract/**\"]\n", exitFindings},
 	}
 	for _, tc := range tests {
@@ -163,6 +161,8 @@ func TestJSONOutput(t *testing.T) {
 		t.Errorf("file is %q, want the path that was linted", f.File)
 	}
 }
+
+// Nothing but the report may reach stdout in JSON mode
 
 // Nothing but the report may reach stdout in JSON mode, or `plumbline | jq`
 // breaks the first time a file cannot be parsed.

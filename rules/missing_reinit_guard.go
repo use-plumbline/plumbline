@@ -36,12 +36,20 @@ func (MissingReinitGuard) Meta() rule.Meta {
 }
 
 func (MissingReinitGuard) Check(c *rule.Context) []rule.Finding {
+	fns := c.ContractFns()
+	if len(fns) == 0 {
+		return nil
+	}
+
+	locals := rule.LocalFns(c.Root)
+
 	var out []rule.Finding
 	locals := rule.LocalFns(c.Root)
 	for _, fn := range c.ContractFns() {
 		if fn.Name == "__constructor" || hasReinitGuard(fn.Body, locals) {
 			continue
 		}
+
 		if !writesStorage(fn.Body) {
 			continue
 		}
@@ -49,7 +57,12 @@ func (MissingReinitGuard) Check(c *rule.Context) []rule.Finding {
 			name, _ := fn.Node.Field("name")
 			out = append(out, rule.At(name, "%s is an initializer that can mutate state without a one-shot has/get guard", fn.Name))
 		}
+
+		out = append(out, rule.At(write,
+			"%s can mutate initialization state without a one-shot has/get guard",
+			fn.Name))
 	}
+
 	return out
 }
 
@@ -67,12 +80,16 @@ func initializerName(name string) bool {
 }
 
 var reinitStorageMutators = map[string]bool{
-	"set": true, "remove": true, "update": true, "try_update": true,
+	"set":        true,
+	"remove":     true,
+	"update":     true,
+	"try_update": true,
 }
 
 // writesStorage reports whether body contains a storage-mutating call.
 func writesStorage(body rule.Node) bool {
 	found := false
+
 	body.Walk(func(n rule.Node) bool {
 		if found {
 			return false
@@ -84,6 +101,7 @@ func writesStorage(body rule.Node) bool {
 		}
 		return true
 	})
+
 	return found
 }
 
@@ -120,6 +138,7 @@ func receiverHasStorage(recv rule.Node) bool {
 		}
 		return false
 	}
+
 	return false
 }
 
@@ -131,10 +150,12 @@ func receiverHasStorage(recv rule.Node) bool {
 func hasReinitGuard(body rule.Node, locals map[string]rule.Node) bool {
 	bindings := letBindings(body)
 	found := false
+
 	body.Walk(func(n rule.Node) bool {
 		if found || n.Kind() != "if_expression" {
 			return !found
 		}
+
 		condition, ok := n.Field("condition")
 		consequence, hasConsequence := n.Field("consequence")
 		if !ok || !hasConsequence || !guardCondition(condition, locals, bindings) {
@@ -144,8 +165,10 @@ func hasReinitGuard(body rule.Node, locals map[string]rule.Node) bool {
 			found = true
 			return false
 		}
+
 		return true
 	})
+
 	return found
 }
 
@@ -270,6 +293,7 @@ func readsStorage(body rule.Node) bool {
 // running the rest of it.
 func reinitGuardExitsEarly(block rule.Node) bool {
 	found := false
+
 	block.Walk(func(n rule.Node) bool {
 		if found {
 			return false
@@ -278,11 +302,14 @@ func reinitGuardExitsEarly(block rule.Node) bool {
 			found = true
 			return false
 		}
-		if name, ok := rule.MacroName(n); ok && (name == "panic" || name == "panic_with_error") {
+
+		if name, ok := rule.MacroName(n); ok &&
+			(name == "panic" || name == "panic_with_error") {
 			found = true
 			return false
 		}
 		return true
 	})
+
 	return found
 }
