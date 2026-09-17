@@ -23,6 +23,18 @@
 
 set -uo pipefail
 
+# The stub and the gate both shell out to jq. Without it the gate dies on its
+# first API call and every HOLD-expecting scenario still "passes", because a
+# gate that crashes holds by construction — 15 of the 21 went green on a
+# machine with no jq, which is a worse outcome than failing. Check first.
+for tool in jq awk; do
+  command -v "$tool" >/dev/null || {
+    echo "merge-gate.test.sh: $tool is required; without it this suite reports" >&2
+    echo "  false passes rather than failures. Install it and re-run." >&2
+    exit 2
+  }
+done
+
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 GATE="$HERE/merge-gate.sh"
 SCENARIOS="$HERE/merge-gate-scenarios"
