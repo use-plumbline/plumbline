@@ -22,7 +22,9 @@ make corpus
 
 ### This run — 2026-09-16
 
-Plumbline `v0.1.0-24-g4490cf5`, six rules. Corpus pinned by commit in
+Plumbline `v0.1.0-30-gb69ee68` — a commit on `main`, not the released tag.
+**`v0.1.0` ships three of these six rules**, so these numbers describe `main`
+and not what `@v0.1.0` does. Six rules. Corpus pinned by commit in
 [`corpus/repos.txt`](../corpus/repos.txt).
 
 | Repository | Commit | Files linted | Files declaring `#[contract]` |
@@ -274,6 +276,43 @@ Two scoping decisions, both argued by
 
 One finding per file: the absent extension is a property of the contract, not
 of each write.
+
+**Its fixture was insufficiently representative, and this was found by
+attacking it rather than by running it.** Every call in the pass fixture was a
+plain method call, so it proved nothing about a contract that writes
+`extend_ttl::<DataKey>(..)`. Asked directly whether the fixture could pass
+while the rule was wrong, the answer was yes: a turbofish call parses as a
+`generic_function` wrapping the field expression, `rule.AsMethodCall` required
+a `field_expression` and returned false, and **no rule in Plumbline could see a
+turbofish call at all**. A contract correctly extending its TTL was reported as
+never extending it.
+
+The corpus contains 81 such calls, so the shape is ordinary rather than exotic.
+Fixed in `internal/rule/ast.go` so every rule benefits, and pinned by a
+turbofish case in the pass fixture.
+
+State the effect precisely: **the corpus counts did not move.** Of those calls,
+104 occurrences are `.get::<` reads and exactly one is a `.set::<` write, in
+`mint-lock` — a file this rule already reports once. So it is a latent defect
+fixed and demonstrated by fixture, not a measured improvement to these numbers.
+
+This is the second fixture in two rules found to be shaped more simply than the
+code it stood for; `missing-reinit-guard`'s was the first. Both were caught by
+the corpus or by adversarial reading, neither by the test suite, which is worth
+knowing about what the test suite can and cannot tell you.
+
+**Known blind spot, measured and deliberately not fixed.** A storage handle
+bound to a local —
+
+```rust
+let store = env.storage().persistent();
+store.set(&key, &value);
+```
+
+— is not recognised as a persistent write, so a contract written that way is
+not reported even with no extension anywhere. That shape appears in no contract
+file in the pinned corpus; the only occurrences are fuzz harnesses. Fixing it
+would be speculation, so it is written down instead.
 
 ### `unchecked-arithmetic` — 55 findings, all 55 read
 

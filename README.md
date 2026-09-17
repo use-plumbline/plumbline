@@ -12,11 +12,13 @@ Rules are **AST checks**, not regex. Contract source is parsed with the
 tree-sitter Rust grammar, so a rule can ask structural questions — "does any path
 through this function reach a `require_auth` call?" — instead of matching text.
 
-> **Status: early.** Four rules, released as `v0.1.0`. They are tested, and
-> checked against 319 files of real third-party contracts so they do not fire
-> on idiomatic Soroban — the run is published in
-> [docs/corpus-run.md](docs/corpus-run.md), including what it got wrong. But
-> four rules is a floor under review, not coverage. See
+> **Status: early.** `main` has six rules. **The only published tag, `v0.1.0`,
+> has three** — `missing-auth`, `panic-in-contract` and `unchecked-arithmetic`
+> — so pinning `@v0.1.0` gets you those three and not the table below. The
+> rules are tested and checked against 341 files of real third-party contracts
+> so they do not fire on idiomatic Soroban; that run is published in
+> [docs/corpus-run.md](docs/corpus-run.md), measured on `main`, including what
+> it got wrong. Six rules is a floor under review, not coverage. See
 > [what it does not catch](#what-it-does-not-catch).
 
 ## About
@@ -99,6 +101,8 @@ make build
 | `panic-in-contract` | warning | `panic!`, `.unwrap()` or `.expect()` where a contract `Error` belongs |
 | `unchecked-arithmetic` | warning | Arithmetic on a token-sized integer without `checked_*` or `saturating_*` |
 | `contractmeta-missing` | note | A contract declaration with no authored `contractmeta!` entry |
+| `missing-reinit-guard` | warning | An initializer that can run twice, with no one-shot guard |
+| `missing-ttl-extension` | warning | A contract that writes persistent storage but never extends its TTL |
 
 Each rule carries its own "why it matters" and "how to fix it" — run
 `plumbline --explain <rule>`.
@@ -121,8 +125,8 @@ Full reference: [docs/configuration.md](docs/configuration.md).
 ## What it does not catch
 
 Plumbline is a linter, not an audit, and it is syntactic — it sees names and
-shapes, not resolved types. Three rules is three rules. A clean run means the
-rules it has did not fire.
+shapes, not resolved types. Six rules is six rules — three of them if you
+pinned `@v0.1.0`. A clean run means the rules it has did not fire.
 
 Nothing here checks reentrancy, token transfer accounting, TTL and archival
 correctness, oracle or price manipulation, signature and replay handling,
