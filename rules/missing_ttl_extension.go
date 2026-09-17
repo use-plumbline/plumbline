@@ -48,6 +48,9 @@ func (MissingTTLExtension) Meta() rule.Meta {
 	}
 }
 
+// Check reports the contract if it writes persistent storage and extends no
+// persistent TTL.
+//
 // Known blind spot: a storage handle bound to a local before use —
 //
 //	let store = env.storage().persistent();
