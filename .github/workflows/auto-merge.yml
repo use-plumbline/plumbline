@@ -1,0 +1,60 @@
+name: auto-merge
+
+# Plumbline's output is an assertion about someone else's contract. A rule that
+# fires wrongly teaches people to ignore the tool, and a tool people ignore
+# protects nothing; a rule that stays quiet when it should not is worse, since a
+# clean run reads as reassurance. So auto-merge is deliberately narrow: it lands
+# the changes it can verify mechanically and routes everything else to a human.
+#
+# SECURITY NOTE: this runs on pull_request_target and workflow_run. Both carry a
+# write token and both run the BASE branch's workflow definition, including for
+# pull requests from forks. It therefore never checks out or executes pull
+# request code — it only inspects metadata through the API.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled, edited]
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  pull_request_review:
+    types: [submitted, dismissed]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+# No concurrency group on purpose. The final evaluation is usually the
+# workflow_run that fires when CI finishes, and an in-flight
+# pull_request_target run cancelling it would leave a green, ready pull request
+# sitting unmerged until something else nudged it.
+
+jobs:
+  gate:
+    # This job's name is matched literally below to exclude it from the
+    # pending-check count. If you rename it, rename SELF_CHECK too.
+    name: check the merge gates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Checked out only to get the gate script. For pull_request_target and
+      # workflow_run, checkout's default ref is the BASE branch, not the pull
+      # request head — which is exactly what makes this safe. Do not add a
+      # `ref:` pointing at the pull request; that is the mistake this event
+      # type exists to avoid.
+      - uses: actions/checkout@v7
+
+      - name: Evaluate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SELF_CHECK: check the merge gates
+          EVENT: ${{ github.event_name }}
+          PR_FROM_PR: ${{ github.event.pull_request.number }}
+          PR_FROM_ISSUE: ${{ github.event.issue.number }}
+          PR_FROM_RUN: ${{ github.event.workflow_run.pull_requests[0].number }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: .github/scripts/merge-gate.sh

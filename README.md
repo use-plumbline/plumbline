@@ -12,9 +12,11 @@ Rules are **AST checks**, not regex. Contract source is parsed with the
 tree-sitter Rust grammar, so a rule can ask structural questions — "does any path
 through this function reach a `require_auth` call?" — instead of matching text.
 
-> **Status: early.** Three rules, released as `v0.1.0`. They are tested, and
-> checked against real third-party contracts so they do not fire on idiomatic
-> Soroban — but three rules is a floor under review, not coverage. See
+> **Status: early.** Four rules, released as `v0.1.0`. They are tested, and
+> checked against 319 files of real third-party contracts so they do not fire
+> on idiomatic Soroban — the run is published in
+> [docs/corpus-run.md](docs/corpus-run.md), including what it got wrong. But
+> four rules is a floor under review, not coverage. See
 > [what it does not catch](#what-it-does-not-catch).
 
 ## About
@@ -96,6 +98,7 @@ make build
 | `missing-auth` | error | A contract function writes storage with no `require_auth` on any path through it |
 | `panic-in-contract` | warning | `panic!`, `.unwrap()` or `.expect()` where a contract `Error` belongs |
 | `unchecked-arithmetic` | warning | Arithmetic on a token-sized integer without `checked_*` or `saturating_*` |
+| `contractmeta-missing` | note | A contract declaration with no authored `contractmeta!` entry |
 
 Each rule carries its own "why it matters" and "how to fix it" — run
 `plumbline --explain <rule>`.
@@ -132,6 +135,7 @@ The rules it does have carry known blind spots, listed in the
 
 ## Documentation
 
+- [The corpus run](docs/corpus-run.md) — what the rules were checked against, and what they got wrong
 - [Architecture](docs/architecture.md) — how the engine, rules and parser fit together
 - [Configuration](docs/configuration.md) — `.plumbline.toml`, severities and excludes
 - [The GitHub Action](docs/github-action.md) — inputs, outputs and exit codes

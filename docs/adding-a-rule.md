@@ -10,10 +10,12 @@ a bug worth reporting.
 ## Before you start
 
 ```sh
-make build   # binary into bin/
-make test    # the suite, with the race detector
-make lint    # gofmt, go vet, golangci-lint
-make run     # lint the sample contract in testdata/
+make build         # binary into bin/
+make test          # the suite, with the race detector
+make lint          # gofmt, go vet, golangci-lint
+make run           # lint the sample contract in testdata/
+make corpus        # lint 319 files of real third-party contracts
+make corpus-check  # ...and fail if the counts left corpus/baseline.txt
 ```
 
 You need Go 1.23+ and a C compiler (the Rust grammar is linked through cgo).
@@ -23,7 +25,7 @@ does not compile it.
 ## Work an existing rule as your template
 
 **Start by reading [`rules/missing_auth.go`](../rules/missing_auth.go).** It is
-the most complete of the three and shows nearly every technique you will need:
+the most complete of the shipped rules and shows nearly every technique you will need:
 walking a function body, recognising a method call, following a call chain, and
 following calls into helper functions.
 
@@ -34,6 +36,7 @@ Pick whichever shipped rule is closest to what you are writing:
 | inspects storage reads/writes, or follows calls into helpers | [`rules/missing_auth.go`](../rules/missing_auth.go) |
 | matches specific method or macro names | [`rules/panic_in_contract.go`](../rules/panic_in_contract.go) |
 | needs to know an expression's type or width | [`rules/unchecked_arithmetic.go`](../rules/unchecked_arithmetic.go) |
+| checks for the presence of a declaration or macro in a file | [`rules/contractmeta_missing.go`](../rules/contractmeta_missing.go) |
 
 Rules never import one another — see the package doc on
 [`rules/rules.go`](../rules/rules.go). Copy the shape, not the import.
@@ -329,7 +332,72 @@ well-written contract.
 Previously verified facts are recorded with dates in
 [docs/sessions/2026-08-08-session-1.md](sessions/2026-08-08-session-1.md).
 
-## 8. Checklist
+## 8. What your rule does to real contracts
+
+A rule is not finished when its fixtures pass. Fixtures prove it fires on code
+you wrote to make it fire; they say nothing about what it does to code written
+by people who have never heard of Plumbline.
+
+```sh
+make corpus
+```
+
+This lints [319 files of real third-party contracts](corpus-run.md) — Stellar's
+`soroban-examples` and OpenZeppelin's `stellar-contracts` — pinned by commit, and
+prints per-rule counts. Because the corpus is pinned, **the numbers only move
+when Plumbline moves**, so your rule's count is your rule's doing.
+
+`make corpus-check` compares against [`corpus/baseline.txt`](../corpus/baseline.txt)
+and fails on any difference. CI runs it. When your rule adds findings, that
+check goes red until you update the baseline — which is the point, not an
+obstacle:
+
+```sh
+make corpus && cp corpus/checkouts/.summary corpus/baseline.txt
+```
+
+Then say in the pull request **which rule moved and by how much**, and update the
+tables in [corpus-run.md](corpus-run.md).
+
+**Read the findings, not the count.** They are in
+`corpus/checkouts/.<repo>.findings`. Every one is a claim your rule is making
+about somebody's real contract, and you are the last person who will look at
+them before a user does.
+
+### What a bad number looks like
+
+There is no fixed threshold, but there is a worked example. `contractmeta-missing`
+shipped reporting **91 findings across 95 contract-declaring files — 96%**. Each
+was factually correct; the metadata really was absent. It was still wrong to ship
+that way, because a rule firing on 96% of idiomatic contracts is not finding
+defects, it is disagreeing with the ecosystem, and it teaches people to ignore
+everything else Plumbline says. The full write-up is in
+[corpus-run.md](corpus-run.md#contractmeta-missing--91-findings-and-a-problem).
+
+If your rule's rate looks like that, narrow it before opening the pull request,
+and say what you narrowed it to.
+
+## 9. Getting it merged
+
+Rules are the contribution this project is shaped around, so `rules/` and
+`testdata/` are deliberately **not**
+[maintainer-owned](../CONTRIBUTING.md#maintainer-owned-areas). A self-contained
+rule — one file, one line in `all()`, two fixtures — touches no protected path
+and can merge without waiting for a maintainer, provided every box in the pull
+request template is ticked and every check is green.
+
+Two things will hold it, both fixable by you:
+
+- **Touching a protected path.** If your rule needs something from
+  `internal/rule/` or `internal/syntax/` that is not there yet, that part needs a
+  maintainer's eyes — which is proportionate, since a change to the AST facade
+  affects every rule at once. Say in the pull request what you needed and why.
+- **A corpus baseline that moved without explanation.** Update it and say what
+  moved.
+
+A hold is not a rejection. It prints its reasons in the workflow log.
+
+## 10. Checklist
 
 - [ ] `rules/your_rule.go`, importing only `internal/rule`
 - [ ] Registered in `all()` in `rules/rules.go`
@@ -339,6 +407,10 @@ Previously verified facts are recorded with dates in
 - [ ] Finding message is actionable and names what to do
 - [ ] SDK claims verified against docs.rs, with a comment saying so
 - [ ] Any scratch/debug file deleted
+- [ ] `make corpus` run, and **every new finding read**
+- [ ] `corpus/baseline.txt` updated if the counts moved, and the pull request
+      says which rule moved and why
+- [ ] `docs/corpus-run.md` tables updated to match
 - [ ] `make lint && make test`
 
 ## A rule that earns its noise
