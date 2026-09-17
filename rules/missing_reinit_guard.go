@@ -40,29 +40,21 @@ func (MissingReinitGuard) Check(c *rule.Context) []rule.Finding {
 	if len(fns) == 0 {
 		return nil
 	}
-
 	locals := rule.LocalFns(c.Root)
 
 	var out []rule.Finding
-	locals := rule.LocalFns(c.Root)
-	for _, fn := range c.ContractFns() {
+	for _, fn := range fns {
 		if fn.Name == "__constructor" || hasReinitGuard(fn.Body, locals) {
 			continue
 		}
-
-		if !writesStorage(fn.Body) {
+		if !initializerName(fn.Name) || !writesStorage(fn.Body) {
 			continue
 		}
-		if initializerName(fn.Name) {
-			name, _ := fn.Node.Field("name")
-			out = append(out, rule.At(name, "%s is an initializer that can mutate state without a one-shot has/get guard", fn.Name))
-		}
-
-		out = append(out, rule.At(write,
-			"%s can mutate initialization state without a one-shot has/get guard",
+		name, _ := fn.Node.Field("name")
+		out = append(out, rule.At(name,
+			"%s is an initializer that can mutate state without a one-shot has/get guard",
 			fn.Name))
 	}
-
 	return out
 }
 

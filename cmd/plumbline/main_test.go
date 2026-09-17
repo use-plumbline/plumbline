@@ -162,8 +162,6 @@ func TestJSONOutput(t *testing.T) {
 	}
 }
 
-// Nothing but the report may reach stdout in JSON mode
-
 // Nothing but the report may reach stdout in JSON mode, or `plumbline | jq`
 // breaks the first time a file cannot be parsed.
 func TestJSONOutputIsTheOnlyThingOnStdout(t *testing.T) {
