@@ -24,7 +24,22 @@ func AsMethodCall(n Node) (MethodCall, bool) {
 		return MethodCall{}, false
 	}
 	fn, ok := n.Field("function")
-	if !ok || fn.Kind() != "field_expression" {
+	if !ok {
+		return MethodCall{}, false
+	}
+	// A turbofish call — `get::<DataKey, State>(&k)` — parses as a
+	// call_expression whose function is a generic_function wrapping the
+	// field_expression, so the method name sits one level deeper. Unwrapping
+	// it here means every rule sees such a call as the method call it is;
+	// before, they were invisible, and the corpus has 81 of them.
+	if fn.Kind() == "generic_function" {
+		inner, innerOK := fn.Field("function")
+		if !innerOK {
+			return MethodCall{}, false
+		}
+		fn = inner
+	}
+	if fn.Kind() != "field_expression" {
 		return MethodCall{}, false
 	}
 	field, ok := fn.Field("field")

@@ -48,6 +48,16 @@ func (MissingTTLExtension) Meta() rule.Meta {
 	}
 }
 
+// Known blind spot: a storage handle bound to a local before use —
+//
+//	let store = env.storage().persistent();
+//	store.set(&key, &value);
+//
+// is not recognised as a persistent write, so a contract written that way is
+// not reported even with no extension anywhere. Measured rather than guessed:
+// that shape appears nowhere in a contract file in the pinned corpus, only in
+// fuzz harnesses, so it is recorded here instead of being fixed on
+// speculation. See docs/corpus-run.md.
 func (MissingTTLExtension) Check(c *rule.Context) []rule.Finding {
 	// Only contract files. A library module that writes persistent storage on
 	// a caller's behalf is not where the TTL decision belongs, and flagging it

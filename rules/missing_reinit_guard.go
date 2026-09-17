@@ -97,41 +97,14 @@ func writesStorage(body rule.Node) bool {
 	return found
 }
 
-// receiverHasStorage walks a method call's receiver chain looking for a
+// receiverHasStorage reports whether a method call's receiver chain reaches a
 // storage accessor.
+//
+// One implementation, in receiverChainHas. There were two, and they disagreed:
+// this one handled turbofish calls and the other did not, so the same chain
+// resolved differently depending on which rule was asking.
 func receiverHasStorage(recv rule.Node) bool {
-	for n := recv; n.Valid(); {
-		// Plain method call: foo.bar(args)
-		if call, ok := rule.AsMethodCall(n); ok {
-			if call.Name == "storage" {
-				return true
-			}
-			n = call.Recv
-			continue
-		}
-		// Generic method call: foo.bar::<T>(args) — turbofish syntax.
-		// tree-sitter parses this as a call_expression whose function is a
-		// generic_function node, not a field_expression, so AsMethodCall
-		// does not match. We extract the method name from the generic_function.
-		if n.Kind() == "call_expression" {
-			fn, ok := n.Field("function")
-			if ok && fn.Kind() == "generic_function" {
-				inner, ok := fn.Field("function")
-				if ok && inner.Kind() == "field_expression" {
-					field, ok := inner.Field("field")
-					value, _ := inner.Field("value")
-					if ok && field.Text() == "storage" {
-						return true
-					}
-					n = value
-					continue
-				}
-			}
-		}
-		return false
-	}
-
-	return false
+	return receiverChainHas(recv, "storage")
 }
 
 // hasReinitGuard recognizes the canonical early-exit guard for an existing
